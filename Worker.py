@@ -79,8 +79,9 @@ class ScalingWorker(Worker):
 
 
 class StopWorker(Worker):
-	def __init__(self, region, instance):
+	def __init__(self, region, instance, waitFlag=False):
 		super(StopWorker, self).__init__(region, instance)
+		self.waitFlag=waitFlag
 		#Worker.__init__(self, region, instance)
 
 	def stopInstance(self):
@@ -89,6 +90,21 @@ class StopWorker(Worker):
 		self.logger.info(self.instance.id + ' :Stopping')
 		self.logger.debug(result)
 
+		# If configured, wait for the stop to complete prior to returning
+		if( self.waitFlag==True ):
+			logStr = self.instance.id + ' :Waiting for Stop to complete...'
+			self.logger.info(logStr)
+			self.logger.debug(logStr)
+			# Need the Client to get the Waiter
+			ec2Client=self.ec2Resource.meta.client
+			waiter=ec2Client.get_waiter('instance_stopped')	
+			# Waits for 40 15 second increments (e.g. up to 10 minutes)
+			waiter.wait( )
+			logStr=''
+		
+	def setWaitFlag(self, flag):
+		self.waitFlag = flag
+	
 	def isOverrideFlagSet(self):
 		''' Use SSM to check for existence of the override file in the guest OS.  If exists, don't Stop instance but log'''
 		return False
