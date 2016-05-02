@@ -19,6 +19,12 @@ class Orchestrator(object):
 		self.tierSpecTableName='TierSpecification'
 		self.tierSpecPartitionKey='SpecName'  # Same as directiveSpecPartitionKey
 		self.tierSpecDict={}
+		self.TIER_STOP='TierStop'
+		self.TIER_START='TierStart'
+		self.TIER_NAME='TierTagValue'
+		self.TIER_SEQ_NBR='TierSequence'
+		self.TIER_SYCHRONIZATION='TierSynchronization'
+		self.TIER_STOP_OVERRIDE_FILENAME='TierStopOverrideFilename'
 
 		# Table requires the DynamoDB.Resource
 		self.dynDBR = boto3.resource('dynamodb', region_name=self.region)
@@ -55,10 +61,10 @@ class Orchestrator(object):
 			#self.processItemJSON(resultItem)
 			#
 
-	def lookupTierSpec(self, partitionTargetValue):
+	def lookupTierSpecs(self, partitionTargetValue):
 		'''
 		Find all rows in table with partitionTargetValue
-		Build a Dictionary (of Dictionaries).  Dictionary Keys are: TierStart, TierStop, TierScaleUp, TierScaleDown
+		Build a Dictionary (of Dictionaries).  Dictionary Keys are: TIER_START, TIER_STOP, TierScaleUp, TierScaleDown
 			Values are attributeValues of the DDB Item Keys
 		'''
 		try:
@@ -71,24 +77,92 @@ class Orchestrator(object):
 		except ClientError as e:
 			self.logger.warning(e.response['Error']['Message'])
 		else:
-			# Get the item from the result
+			# Get the items from the result
 			resultItems=dynamodbItem['Items']
 			self.logger.debug(resultItems)
-			
+
+			# Create a Dictionary that stores the attributes and attributeValues associated with Tiers
 			for attribute in resultItems:
 				# print "Tier Tag Value ==>", attribute['TierTagValue']
-				# print "TierStart==>", attribute['TierStart']
+				# print "TIER_START==>", attribute[self.TIER_START]
 				# print '\n'
-				# print "TierStop==>", attribute['TierStop']
+				# print "TIER_STOP==>", attribute[self.TIER_STOP]
 				# print '\n\n'
-				self.tierSpecDict[attribute['TierTagValue']]={'TierStop' : attribute['TierStop'], 'TierStart' : attribute['TierStart']}
+				self.tierSpecDict[attribute['TierTagValue']]={self.TIER_STOP : attribute[self.TIER_STOP], self.TIER_START : attribute[self.TIER_START]}
 
+			# Log the constructed Tier Spec Dictionary
 			for key, value in self.tierSpecDict.iteritems():
 				self.logger.debug('tierSpecDict (key=%s, value=%s)' % (key, value))
 
-	def sequenceTiers(self):
-		pass
+	def sequenceTiers(self, tierAction):
+		# Using the Tier Spec Dictionary, construct a simple List to order the sequence of Tier Processing
+		# for the given Action.  Sequence is ascending.
+		#
+		# tierAction indicates whether it is a TIER_STOP, or TIER_START, as they may have different sequences
+		sequencedList=[]
+		for currKey, currAttributes in self.tierSpecDict.iteritems():
+			self.logger.debug('sequenceList Action=%s, currKey=%s, currAttributes=%s)' % (tierAction, currKey, currAttributes) )
+			
+			# Grab the Tier Name first
+			tierName = currKey
+			#tierName = currAttributes[self.TIER_NAME]
 
+			tierAttributes={}	# do I need to scope this variable as such?
+			if( tierAction == self.TIER_STOP):
+				# Locate the TIER_STOP Dictionary
+				tierAttributes = currAttributes[self.TIER_STOP]
+
+			elif( tierAction == self.TIER_START ):
+				tierAttributes = currAttributes[self.TIER_START]
+
+				# Insert into the List at the index specified as the sequence number in the Dict 
+			sequencedList.insert( int(tierAttributes[self.TIER_SEQ_NBR]) , tierName)
+			
+		return( sequencedList )
+	
+
+	def isTierSynchronized(self, tierName, tierAction):
+		# Get the Tier Named tierName
+		tierAttributes = self.tierSpecDict[tierName]
+
+		# Get the dictionary for the correct Action
+		tierActionAttribtes={}
+		if( tierAction == self.TIER_STOP):
+			# Locate the TIER_STOP Dictionary
+			tierActionAttributes = tierAttributes[self.TIER_STOP]
+
+		elif( tierAction == self.TIER_START ):
+			# Locate the TIER_START Dictionary
+			tierActionAttributes = tierAttributes[self.TIER_START]
+
+		# Return the value in the Dict for TierSynchronization
+		if self.TIER_SYCHRONIZATION in tierActionAttributes:
+			res = tierActionAttributes[self.TIER_SYCHRONIZATION]
+		else:
+			res = False
+
+		self.logger.debug('isTierSynchronized for %s, %s is %s' % (tierName, tierAction, res) )
+		return( res )
+
+	def getTierStopOverrideFilename(self, tierName):
+
+		# Get the Tier Named tierName
+		tierAttributes = self.tierSpecDict[tierName]
+
+		# Get the dictionary for the correct Action
+		tierActionAttribtes={}
+
+		# Locate the TIER_STOP Dictionary method only applies to TIER_STOP
+		tierActionAttributes = tierAttributes[self.TIER_STOP]
+		
+		# Return the value in the Dict for TierStopOverrideFilename
+		if self.TIER_STOP_OVERRIDE_FILENAME in tierActionAttributes:
+			res = tierActionAttributes[self.TIER_STOP_OVERRIDE_FILENAME]
+		else:
+			res = ''
+
+		return( res )
+	
 
 	def orchestrate(self):
 		pass
@@ -98,11 +172,11 @@ class Orchestrator(object):
 		# If SNS flag enabled and SNS setup, also send to SNS
 		pass
 
-	def startTier(self):
+	def startATier(self):
 		pass
 
 
-	def stopTier(self):
+	def stopATier(self):
 		pass
 
 
@@ -120,11 +194,23 @@ class Orchestrator(object):
 		consoleHandler.setLevel(logging.INFO)
 		self.logger.addHandler(consoleHandler)
 
+	def runTestCases(self):
+		orch = Orchestrator('us-west-2')
+		orch.logger.info("Executing lookupDirectiveSpec()")
+		orch.lookupDirectiveSpec('BotoTestCase1')
+		orch.logger.info("Executing lookupTierSpec()")
+		orch.lookupTierSpecs('BotoTestCase1')
+		seqList=orch.sequenceTiers(orch.TIER_STOP)
+		print seqList
+		print 'AppServer role synch? ', orch.isTierSynchronized('Role_AppServer', orch.TIER_STOP)
+		print 'AppServer role synch? ', orch.isTierSynchronized('Role_AppServer', orch.TIER_START)
+		print 'Role_Web override file loc ', orch.getTierStopOverrideFilename('Role_Web')
+		print 'Role_AppServer override file loc ',orch.getTierStopOverrideFilename('Role_AppServer')
+		print 'Role_DB override file loc ',orch.getTierStopOverrideFilename('Role_DB')
+
+
 if __name__ == "__main__":
-	orch = Orchestrator('us-west-2')
-	orch.logger.info("Executing lookupDirectiveSpec()")
-	orch.lookupDirectiveSpec('BotoTestCase1')
-	orch.logger.info("Executing lookupTierSpec()")
-	orch.lookupTierSpec('BotoTestCase1')
+	orchMain = Orchestrator('us-west-2')
+	orchMain.runTestCases()
 	
 
