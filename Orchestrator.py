@@ -4,44 +4,109 @@ import json
 import logging
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
+import Worker
 
 class Orchestrator(object):
+
+	# Class Variables
+	SPEC_REGION_KEY='Region'
+
+	ENVIRONMENT_FILTER_TAG_KEY='EnvFilterTagName'
+	ENVIRONMENT_FILTER_TAG_VALUE='EnvFilterTagValue'
+
+	TIER_FILTER_TAG_KEY='TierFilterTagName'
+	TIER_FILTER_TAG_VALUE='TierTagValue'
+
+	TIER_STOP='TierStop'
+	TIER_START='TierStart'
+	TIER_NAME='TierTagValue'
+	TIER_SEQ_NBR='TierSequence'
+	TIER_SYCHRONIZATION='TierSynchronization'
+	TIER_STOP_OVERRIDE_FILENAME='TierStopOverrideFilename'
+
+	ACTION_STOP='Stop'
+	ACTION_START='Start'
+	ACTION_SCALE_UP='ScaleUp'
+	ACTION_SCALE_DOWN='ScaleDown'
 
 	def __init__(self, partitionTargetValue, action, region='us-west-2'):
 		self.region=region 					# default to us-west-2
 		self.interTierOrchestrationDelay= 0 # number of seconds to delay inbetween tier orchestration
 		
+		###
+		# DynamoDB Table Related
+		#
+		self.dynDBC = boto3.client('dynamodb', region_name=self.region)
+
+		# Directive DynamoDB Table Related
 		self.directiveSpecTableName='DirectiveSpec'
 		self.directiveSpecPartitionKey='SpecName'
 		self.partitionTargetValue=partitionTargetValue
 
-
-		self.action=action
-		self.ACTION_STOP='Stop'
-		self.ACTION_START='Start'
-		self.ACTION_SCALE_UP="ScaleUp"
-		self.ACTION_SCALE_DOWN="ScaleDown"
-		self.validActionNames = [self.ACTION_START, self.ACTION_STOP, self.ACTION_SCALE_UP, self.ACTION_SCALE_DOWN]
-		
-		self.directiveSpecDict={}
-		self.dynDBC = boto3.client('dynamodb', region_name=self.region)
-
+		# Tier-specific DynamoDB Table Related
 		self.tierSpecTableName='TierSpecification'
 		self.tierSpecPartitionKey='SpecName'  # Same as directiveSpecPartitionKey
-		self.tierSpecDict={}
-		self.sequencedList=[]
-
-		self.TIER_STOP='TierStop'
-		self.TIER_START='TierStart'
-		self.TIER_NAME='TierTagValue'
-		self.TIER_SEQ_NBR='TierSequence'
-		self.TIER_SYCHRONIZATION='TierSynchronization'
-		self.TIER_STOP_OVERRIDE_FILENAME='TierStopOverrideFilename'
 
 		# Table requires the DynamoDB.Resource
 		self.dynDBR = boto3.resource('dynamodb', region_name=self.region)
 		self.tierSpecTable = self.dynDBR.Table(self.tierSpecTableName)
+		#
+		###
 
+		###
+		# EC2 Resouce
+		self.ec2R = boto3.resource('ec2', region_name=self.region)
+		#
+		###
+
+		
+		###
+		# Python / Boto Datastructures
+		#
+		# {
+		#	"SpecName" : "BotoTestCase1",
+		#	"Region" : "us-west-2",
+		#	"EnvFilterTagName" : "Environment",
+		#	"EnvFilterTagValue" : "ENV001",
+		#	"TierFilterTagName" : "Role",
+		# }
+		#
+		self.directiveSpecDict={}
+
+		# {
+		#   "SpecName": "BotoTestCase1",
+		#   "TierTagValue": "Role_AppServer"
+		#   "TierStart": {
+		#     "TierSequence": "1",
+		#     "TierSynchronization": "False"
+		#   },
+		#   "TierStop": {
+		#     "TierSequence": "1",
+		#     "TierStopOverrideFilename": "/tmp/StopOverride",
+		#     "TierSynchronization": "True"
+		#   },
+		# }
+		self.tierSpecDict={}
+
+		# Dynamically created based on tierSpecDict, based on TierSequence for Action specified
+		self.sequencedTiersList=[]
+
+		# Actions : e.g. what the request is supposed to do to the instances/tiers
+		self.action=action
+		self.validActionNames = [ Orchestrator.ACTION_START, 
+								  Orchestrator.ACTION_STOP, 
+								  Orchestrator.ACTION_SCALE_UP,
+								  Orchestrator.ACTION_SCALE_DOWN 
+								]
+
+		self.instanceStateMap = {
+			0: "pending",
+			16: "running",
+			32: "shutting-down",
+			48: "terminated",
+			64: "stopping",
+			80: "stopped"
+		}
 
 		self.initLogging()
 
@@ -57,10 +122,10 @@ class Orchestrator(object):
 		self.lookupTierSpecs(self.partitionTargetValue)
 
 		# Establish the tier sequence for the requested action
-		if( self.action == self.ACTION_STOP):
-			self.sequenceTiers(self.TIER_STOP)
-		elif( self.action == self.ACTION_START):
-			self.sequenceTiers(self.TIER_START)
+		if( self.action == Orchestrator.ACTION_STOP):
+			self.sequenceTiers(Orchestrator.TIER_STOP)
+		elif( self.action == Orchestrator.ACTION_START):
+			self.sequenceTiers(Orchestrator.TIER_START)
 
 	def lookupDirectiveSpec(self, partitionTargetValue):
 		try:
@@ -114,11 +179,11 @@ class Orchestrator(object):
 			# Create a Dictionary that stores the attributes and attributeValues associated with Tiers
 			for attribute in resultItems:
 				# print "Tier Tag Value ==>", attribute['TierTagValue']
-				# print "TIER_START==>", attribute[self.TIER_START]
+				# print "TIER_START==>", attribute[Orchestrator.TIER_START]
 				# print '\n'
-				# print "TIER_STOP==>", attribute[self.TIER_STOP]
+				# print "TIER_STOP==>", attribute[Orchestrator.TIER_STOP]
 				# print '\n\n'
-				self.tierSpecDict[attribute['TierTagValue']]={self.TIER_STOP : attribute[self.TIER_STOP], self.TIER_START : attribute[self.TIER_START]}
+				self.tierSpecDict[attribute['TierTagValue']]={Orchestrator.TIER_STOP : attribute[Orchestrator.TIER_STOP], Orchestrator.TIER_START : attribute[Orchestrator.TIER_START]}
 
 			# Log the constructed Tier Spec Dictionary
 			for key, value in self.tierSpecDict.iteritems():
@@ -134,22 +199,22 @@ class Orchestrator(object):
 			
 			# Grab the Tier Name first
 			tierName = currKey
-			#tierName = currAttributes[self.TIER_NAME]
+			#tierName = currAttributes[Orchestrator.TIER_NAME]
 
 			tierAttributes={}	# do I need to scope this variable as such?
-			if( tierAction == self.TIER_STOP):
+			if( tierAction == Orchestrator.TIER_STOP):
 				# Locate the TIER_STOP Dictionary
-				tierAttributes = currAttributes[self.TIER_STOP]
+				tierAttributes = currAttributes[Orchestrator.TIER_STOP]
 
-			elif( tierAction == self.TIER_START ):
-				tierAttributes = currAttributes[self.TIER_START]
+			elif( tierAction == Orchestrator.TIER_START ):
+				tierAttributes = currAttributes[Orchestrator.TIER_START]
 
 				# Insert into the List at the index specified as the sequence number in the Dict 
-			self.sequencedList.insert( int(tierAttributes[self.TIER_SEQ_NBR]) , tierName)
+			self.sequencedTiersList.insert( int(tierAttributes[Orchestrator.TIER_SEQ_NBR]) , tierName)
 
-		self.logger.debug('Sequence List for Action %s is %s' % (tierAction, self.sequencedList))
+		self.logger.debug('Sequence List for Action %s is %s' % (tierAction, self.sequencedTiersList))
 			
-		return( self.sequencedList )
+		return( self.sequencedTiersList )
 	
 
 	def isTierSynchronized(self, tierName, tierAction):
@@ -158,17 +223,17 @@ class Orchestrator(object):
 
 		# Get the dictionary for the correct Action
 		tierActionAttribtes={}
-		if( tierAction == self.TIER_STOP):
+		if( tierAction == Orchestrator.TIER_STOP):
 			# Locate the TIER_STOP Dictionary
-			tierActionAttributes = tierAttributes[self.TIER_STOP]
+			tierActionAttributes = tierAttributes[Orchestrator.TIER_STOP]
 
-		elif( tierAction == self.TIER_START ):
+		elif( tierAction == Orchestrator.TIER_START ):
 			# Locate the TIER_START Dictionary
-			tierActionAttributes = tierAttributes[self.TIER_START]
+			tierActionAttributes = tierAttributes[Orchestrator.TIER_START]
 
 		# Return the value in the Dict for TierSynchronization
-		if self.TIER_SYCHRONIZATION in tierActionAttributes:
-			res = tierActionAttributes[self.TIER_SYCHRONIZATION]
+		if Orchestrator.TIER_SEQ_NBR in tierActionAttributes:
+			res = tierActionAttributes[Orchestrator.TIER_SEQ_NBR]
 		else:
 			res = False
 
@@ -184,27 +249,105 @@ class Orchestrator(object):
 		tierActionAttribtes={}
 
 		# Locate the TIER_STOP Dictionary method only applies to TIER_STOP
-		tierActionAttributes = tierAttributes[self.TIER_STOP]
+		tierActionAttributes = tierAttributes[Orchestrator.TIER_STOP]
 		
 		# Return the value in the Dict for TierStopOverrideFilename
-		if self.TIER_STOP_OVERRIDE_FILENAME in tierActionAttributes:
-			res = tierActionAttributes[self.TIER_STOP_OVERRIDE_FILENAME]
+		if Orchestrator.TIER_STOP_OVERRIDE_FILENAME in tierActionAttributes:
+			res = tierActionAttributes[Orchestrator.TIER_STOP_OVERRIDE_FILENAME]
 		else:
 			res = ''
 
 		return( res )
 	
+	def lookupInstancesByFilter(self, targetInstanceStateKey, tierName):
+	    # Use the filter() method of the instances collection to retrieve
+	    # all running EC2 instances.
+		self.logger.debug('In lookupInstancesByFilter() seeking instances in tier %s' % tierName)
+		targetFilter = [
+			{
+		        'Name': 'instance-state-name', 
+		        'Values': [targetInstanceStateKey]
+		    },
+		    {
+		        'Name': 'tag:Orchestrator.TIER_FILTER_TAG_KEY',
+		        'Values': [self.directiveSpecDict[Orchestrator.TIER_FILTER_TAG_KEY]]
+		    },
+		    {
+		        'Name': 'tag:Orchestrator.TIER_FILTER_TAG_VALUE',
+		        'Values': [tierName]
+		    },
+		    {
+		        'Name': 'tag:Orchestrator.ENVIRONMENT_FILTER_TAG_KEY',
+		        'Values': [self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY]]
+		    },
+		    {
+		        'Name': 'tag:Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE',
+		        'Values': [self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE]]
+		    }
+		]
 
-	def orchestrate(self):
-		'''
-		Given a Spec, and a Directive, 
-		1) Determine the right Sequencing for applying the directive to the tierSpecDict
-		2) Iterate through the Tiers based on the sequence and
-		3) Apply the directive to each tier, applying the inter-tier delay factor 
-		4) Log
-		'''
-		pass
+		#filter the instances
+		# NOTE: Only instances within the specified region are returned
 
+		targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
+
+		#if( len(targetInstanceColl) > 0 ) :
+		for item in targetInstanceColl:
+			self.logger.debug('Target instance found :', item)
+		# else:
+		# 	self.logger.info('In lookupInstancesByFilter() no instances found based on filter')
+
+		return targetInstanceColl
+	
+	def orchestrate(self, specName, action ):
+		'''
+		Given a SpecName, and an Action, 
+		1) Iterate through the Tiers based on the sequence and
+		2) Apply the directive to each tier, applying the inter-tier delay factor 
+		3) Log
+		'''
+		if( action == Orchestrator.ACTION_STOP ):
+			for currTier in self.sequencedTiersList:
+				self.stopATier(currTier)
+		elif( action == Orchestrator.ACTION_START ): 
+			for currTier in self.sequencedTiersList:
+				self.startATier(currTier)
+
+
+	def stopATier(self, tierName):
+		'''
+		Given a Tier,
+		0) We may want to create a separate "client" per instance within the tier, if we process in parallel
+		1) Determine if the override flag is set, and if so, log and bypass
+		2) Determine if the tier is synchronized and if so, ensure the use Waiters is applied
+		   during processing, prior to returning
+		3) Stop the tier 
+		4) Log 
+		'''
+		running=self.instanceStateMap[16]
+
+		# Find the instances
+		instancesToStopList = self.lookupInstancesByFilter(
+			running, 
+			tierName
+		)
+
+		region=self.directiveSpecDict[self.SPEC_REGION_KEY]
+		syncFlag=self.isTierSynchronized(tierName, Orchestrator.TIER_STOP)
+
+		# if( len(instancesToStopList) >  0 ) :
+		# 	for currInstance in instancesToStopList:
+		# 		self.logger.debug('Stopping instance %s', currInstance)
+		# 		stopWorker = StopWorker(region, currInstance, syncFlag)
+		# 		stopWorker.execute()
+		# else :
+		# 	self.logger.debug('No instances found to stop with state=%s, tagKey=%s, tagValue=%s' % (running, targetTagName, targetTagValue) )
+		for currInstance in instancesToStopList:
+			self.logger.debug('Stopping instance %s', currInstance)
+			stopWorker = StopWorker(region, currInstance, syncFlag)
+			stopWorker.execute()
+
+		self.logger.debug('stopATier() completed')
 
 	def postEvent(self):
 		# If SNS flag enabled and SNS setup, also send to SNS
@@ -225,19 +368,6 @@ class Orchestrator(object):
 		pass
 
 
-	def stopATier(self, tierName):
-		'''
-		Given a Tier,
-		0) We may want to create a separate "client" per instance within the tier, if we process in parallel
-		1) Determine if the override flag is set, and if so, log and bypass
-		2) Determine if the tier is synchronized and if so, ensure the use Waiters is applied
-		   during processing, prior to returning
-		3) Stop the tier 
-		4) Log 
-		'''
-		if( self.isTierSynchronized(tierName, orch.TIER_STOP) ):
-			pass
-		pass
 
 
 	def scaleInstance(self, direction):
@@ -259,14 +389,15 @@ class Orchestrator(object):
 
 	def runTestCases(self):
 		self.logger.info("Executing initializeState()")
-		self.initializeState(self.ACTION_STOP)
+		self.initializeState(Orchestrator.ACTION_STOP)
 		print 'Role_Web override file loc ', self.getTierStopOverrideFilename('Role_Web')
 		print 'Role_AppServer override file loc ', self.getTierStopOverrideFilename('Role_AppServer')
 		print 'Role_DB override file loc ', self.getTierStopOverrideFilename('Role_DB')
+		self.orchestrate('BotoTestCase1', Orchestrator.ACTION_STOP )
 
 
 if __name__ == "__main__":
-	orchMain = Orchestrator('BotoTestCase1', 'Stop', 'us-west-2')
+	orchMain = Orchestrator('BotoTestCase1', Orchestrator.ACTION_STOP, 'us-west-2')
 	orchMain.runTestCases()
 	
 
