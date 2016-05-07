@@ -217,6 +217,10 @@ class Orchestrator(object):
 		return( self.sequencedTiersList )
 	
 
+	def printSpecDict(self):
+		for key, value in self.directiveSpecDict.iteritems():
+			print 'directiveSpecDict (key=%s, value=%s)' % (key, value)
+
 	def isTierSynchronized(self, tierName, tierAction):
 		# Get the Tier Named tierName
 		tierAttributes = self.tierSpecDict[tierName]
@@ -263,28 +267,50 @@ class Orchestrator(object):
 	    # Use the filter() method of the instances collection to retrieve
 	    # all running EC2 instances.
 		self.logger.debug('In lookupInstancesByFilter() seeking instances in tier %s' % tierName)
+		self.printSpecDict()
+		self.logger.debug('  instance state %s' % targetInstanceStateKey)
+		self.logger.debug('  tier tag key %s' % self.directiveSpecDict[Orchestrator.TIER_FILTER_TAG_KEY])
+		self.logger.debug('  tier tag value %s' % tierName)
+		self.logger.debug('  Env tag key %s' % self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY])
+		self.logger.debug('  Env tag value %s' % self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE])
+
+
 		targetFilter = [
 			{
 		        'Name': 'instance-state-name', 
 		        'Values': [targetInstanceStateKey]
 		    },
 		    {
-		        'Name': 'tag:Orchestrator.TIER_FILTER_TAG_KEY',
-		        'Values': [self.directiveSpecDict[Orchestrator.TIER_FILTER_TAG_KEY]]
-		    },
-		    {
-		        'Name': 'tag:Orchestrator.TIER_FILTER_TAG_VALUE',
-		        'Values': [tierName]
-		    },
-		    {
-		        'Name': 'tag:Orchestrator.ENVIRONMENT_FILTER_TAG_KEY',
-		        'Values': [self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY]]
-		    },
-		    {
-		        'Name': 'tag:Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE',
+		        'Name': 'tag:' + self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY],
 		        'Values': [self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE]]
+		    },
+		    {
+		        'Name': 'tag:' + self.directiveSpecDict[Orchestrator.TIER_FILTER_TAG_KEY],
+		        'Values': [tierName]
 		    }
 		]
+		# targetFilter = [
+		# 	{
+		#         'Name': 'instance-state-name', 
+		#         'Values': [targetInstanceStateKey]
+		#     },
+		#     {
+		#         'Name': 'tag:' + Orchestrator.ENVIRONMENT_FILTER_TAG_KEY,
+		#         'Values': [self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY]]
+		#     },
+		#     {
+		#         'Name': 'tag:' + Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE,
+		#         'Values': [self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE]]
+		#     },
+		#     {
+		#         'Name': 'tag:' + Orchestrator.TIER_FILTER_TAG_KEY,
+		#         'Values': [self.directiveSpecDict[Orchestrator.TIER_FILTER_TAG_KEY]]
+		#     },
+		#     {
+		#         'Name': 'tag:' + Orchestrator.TIER_FILTER_TAG_VALUE,
+		#         'Values': [tierName]
+		#     }
+		# ]
 
 		#filter the instances
 		# NOTE: Only instances within the specified region are returned
@@ -292,8 +318,8 @@ class Orchestrator(object):
 		targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
 
 		#if( len(targetInstanceColl) > 0 ) :
-		for item in targetInstanceColl:
-			self.logger.debug('Target instance found :', item)
+		#for item in targetInstanceColl:
+		#	self.logger.debug('Target instance found :', item)
 		# else:
 		# 	self.logger.info('In lookupInstancesByFilter() no instances found based on filter')
 
@@ -306,6 +332,7 @@ class Orchestrator(object):
 		2) Apply the directive to each tier, applying the inter-tier delay factor 
 		3) Log
 		'''
+
 		if( action == Orchestrator.ACTION_STOP ):
 			for currTier in self.sequencedTiersList:
 				self.stopATier(currTier)
@@ -347,7 +374,7 @@ class Orchestrator(object):
 			stopWorker = StopWorker(region, currInstance, syncFlag)
 			stopWorker.execute()
 
-		self.logger.debug('stopATier() completed')
+		self.logger.debug('stopATier() completed for tier %s' % tierName)
 
 	def postEvent(self):
 		# If SNS flag enabled and SNS setup, also send to SNS
