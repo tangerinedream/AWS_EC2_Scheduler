@@ -17,18 +17,21 @@ class Worker(object):
 			"stopping" : 64,
 			"stopped" : 80
 		}
-		self.initLogging()
+		self.initLogging()  
 
 	def initLogging(self):
 		# Setup the Logger
 		self.logger = logging.getLogger(__name__)  #The Module Name
 		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename=__name__ + '.log', level=logging.DEBUG)
 		
+		###
+		#Currently, this adds another logger everytime a subclass instantiated.
+
 		# Setup the Handlers
 		# create console handler and set level to debug
-		consoleHandler = logging.StreamHandler()
-		consoleHandler.setLevel(logging.INFO)
-		self.logger.addHandler(consoleHandler)
+		#consoleHandler = logging.StreamHandler()
+		#consoleHandler.setLevel(logging.INFO)
+		#self.logger.addHandler(consoleHandler)
 
 
 
@@ -42,8 +45,7 @@ class StartWorker(Worker):
 	def startInstance(self):
 		#EC2.Instance.start()
 		result=self.instance.start()
-		self.logger.info(self.instance.id + ' :Starting')
-		self.logger.debug(result)
+		self.logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 
 	def execute(self):
 		self.startInstance()
@@ -85,10 +87,10 @@ class StopWorker(Worker):
 		#Worker.__init__(self, region, instance)
 
 	def stopInstance(self):
+		self.logger.info('Worker::stopInstance() called')
 		#EC2.Instance.stop()
 		result=self.instance.stop()  # NOTE: the 'self' may need to be removed
-		self.logger.info(self.instance.id + ' :Stopping')
-		self.logger.debug(result)
+		self.logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
 
 		# If configured, wait for the stop to complete prior to returning
 		if( self.waitFlag==True ):
