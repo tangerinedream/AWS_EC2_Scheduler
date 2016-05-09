@@ -1,9 +1,10 @@
 #!/usr/bin/python
 import boto3
 import logging
+from distutils.util import strtobool
 
 class Worker(object):
-	def __init__(self, region, instance, newInstanceType=False):
+	def __init__(self, region, instance):
 
 		self.region=region
 		self.ec2Resource = boto3.resource('ec2', region_name=self.region)
@@ -21,17 +22,18 @@ class Worker(object):
 
 	def initLogging(self):
 		# Setup the Logger
-		self.logger = logging.getLogger(__name__)  #The Module Name
-		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename=__name__ + '.log', level=logging.DEBUG)
+		self.logger = logging.getLogger('Worker')  #The Module Name
+		self.logger.setLevel(logging.INFO)
+		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename='Worker' + '.log', filemode='w', level=logging.INFO)
 		
 		###
 		#Currently, this adds another logger everytime a subclass instantiated.
 
 		# Setup the Handlers
 		# create console handler and set level to debug
-		#consoleHandler = logging.StreamHandler()
-		#consoleHandler.setLevel(logging.INFO)
-		#self.logger.addHandler(consoleHandler)
+		# consoleHandler = logging.StreamHandler()
+		# consoleHandler.setLevel(logging.INFO)
+		# self.logger.addHandler(consoleHandler)
 
 
 
@@ -51,6 +53,61 @@ class StartWorker(Worker):
 		self.startInstance()
 
 
+
+
+
+class StopWorker(Worker):
+	def __init__(self, region, instance):
+		super(StopWorker, self).__init__(region, instance)
+		
+		# MUST convert string False to boolean False
+		self.waitFlag=strtobool("False")
+
+		
+	def stopInstance(self):
+
+		self.logger.info('Worker::stopInstance() called')
+		
+		#EC2.Instance.stop()
+		result=self.instance.stop()
+
+		# If configured, wait for the stop to complete prior to returning
+		self.logger.info('The bool value of self.waitFlag %s, is %s' % (self.waitFlag, bool(self.waitFlag)))
+
+		
+		# self.waitFlag has been converted from str to boolean via set method
+		if( self.waitFlag ):
+			self.logger.info(self.instance.id + ' :Waiting for Stop to complete...')
+			
+			# Need the Client to get the Waiter
+			ec2Client=self.ec2Resource.meta.client
+			waiter=ec2Client.get_waiter('instance_stopped')	
+
+			# Waits for 40 15 second increments (e.g. up to 10 minutes)
+			waiter.wait( )
+
+		else:
+			self.logger.info(self.instance.id + ' No wait for Stop to complete requested')
+
+		self.logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
+		
+	def setWaitFlag(self, flag):
+
+		# MUST convert string False to boolean False
+		self.waitFlag = strtobool(flag)
+
+	def getWaitFlag(self):
+		return( self.waitFlag )
+	
+	def isOverrideFlagSet(self):
+		''' Use SSM to check for existence of the override file in the guest OS.  If exists, don't Stop instance but log'''
+		return False
+
+	def execute(self):
+		if( self.isOverrideFlagSet() ):
+			self.logger.info('Override set for instance %s, NOT Stopping the instance' % instance.id)
+		else:
+			self.stopInstance()
 
 class ScalingWorker(Worker):
 	def __init__(self, region, instance, newInstanceType):
@@ -79,40 +136,3 @@ class ScalingWorker(Worker):
 			self.logger.debug(logMsg)
 
 
-
-class StopWorker(Worker):
-	def __init__(self, region, instance, waitFlag=False):
-		super(StopWorker, self).__init__(region, instance)
-		self.waitFlag=waitFlag
-		#Worker.__init__(self, region, instance)
-
-	def stopInstance(self):
-		self.logger.info('Worker::stopInstance() called')
-		#EC2.Instance.stop()
-		result=self.instance.stop()  # NOTE: the 'self' may need to be removed
-		self.logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
-
-		# If configured, wait for the stop to complete prior to returning
-		if( self.waitFlag==True ):
-			logStr = self.instance.id + ' :Waiting for Stop to complete...'
-			self.logger.info(logStr)
-			self.logger.debug(logStr)
-			# Need the Client to get the Waiter
-			ec2Client=self.ec2Resource.meta.client
-			waiter=ec2Client.get_waiter('instance_stopped')	
-			# Waits for 40 15 second increments (e.g. up to 10 minutes)
-			waiter.wait( )
-			logStr=''
-		
-	def setWaitFlag(self, flag):
-		self.waitFlag = flag
-	
-	def isOverrideFlagSet(self):
-		''' Use SSM to check for existence of the override file in the guest OS.  If exists, don't Stop instance but log'''
-		return False
-
-	def execute(self):
-		if( self.isOverrideFlagSet() == True ):
-			self.logger.info('Override set for instance %s, NOT Stopping the instance' % instance.id)
-		else:
-			self.stopInstance()
