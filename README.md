@@ -28,29 +28,32 @@ For each workload, there is one entry in the table.  Each workload table entry m
 
 The workload specification contains tier independent configuration of the workload.  The way to think about it, is the WorkloadSpecification represents the entire system being managed, which consists of one or more tiers.
 
-EnvFilterTagName
-:  The name of the tag *key* on the instance which contains a tag *value* indicating the Workload (aka the Environment Name)
+<dl>
+<dt>EnvFilterTagName</dt>
+<dd>:  The name of the tag *key* on the instance which contains a tag *value* indicating the Workload (aka the Environment Name)</dd>
 
-EnvFilterTagValue
-: The tag *value* containing the Workload identifyier (aka Environment name)
+<dt>EnvFilterTagValue</dt>
+<dd>: The tag *value* containing the Workload identifyier (aka Environment name)</dd>
 
-Region
-: The AWS region identifier **where the workload runs, not** where the region where this product runs
+<dt>Region</dt>
+<dd>: The AWS region identifier **where the workload runs, **not** where the region where this product runs</dd>
 
-SpecName
-: The name of the Workload
+<dt>SpecName</dt>
+<dd>: The name of the Workload</dd>
 
-SSMS3BucketName
-:  The name of the bucket where the SSM results will be places.  I suggest you enable S3 Lifecycle rules on the bucket as the SSM Agent creates a new entry everytime it checks an instance
+<dt>SSMS3BucketName</dt>
+<dd>:  The name of the bucket where the SSM results will be places.  I suggest you enable S3 Lifecycle rules on the bucket as the SSM Agent creates a new entry everytime it checks an instance</dd>
 
-SSMS3KeyPrefixName
-: The path off the S3BucketName
+<dt>SSMS3KeyPrefixName</dt>
+<dd>: The path off the S3BucketName</dd>
 
-TierFilterTagName
-: The name of the tag *key* on the instance used to locate the Tier's Value.
+<dt>TierFilterTagName</dt>
+<dd>: The name of the tag *key* on the instance used to locate the Tier's Value.</dd>
+
+</dl>
 
 #### JSON: WorkloadSpecification 
-----
+```json
 {
   "EnvFilterTagName": "Environment",
   "EnvFilterTagValue": "ENV001",
@@ -60,7 +63,7 @@ TierFilterTagName
   "SSMS3KeyPrefixName": "ssmRemoteComandResults",
   "TierFilterTagName": "Role"
 }
-----
+
 ### TierSpecification
 The tier specification represent the tier-specific configuration.  A tier means as set of instances that share the same Tag Value.  For example, a tier could be "Web", or "App", or "DB", or however your architecture is laid out.  Within a tier, there may be one or more instances.  As there may be multiple rows for a given WorkloadSpecification, each Tier contains the Workload identifier.
 
@@ -75,36 +78,38 @@ Here are a few things you **need** to know about the Tier Specification:
    * In the example below, the Tier named "Role_Web" will be the first tier stopped (e.g. TierSequence == 0) and last tier started, in a 3 tier architecture (e.g. TierSequence is 2) 
 
 Definition List
+<dl>
 
-SpecName
-:  The name tying the tier back to the WorkloadSpecification
+<dt>SpecName</dt>
+<dd>:  The name tying the tier back to the WorkloadSpecification</dd>
 
-TierStart
-:  The dictionary containing a specification for the Start Action of the tier
+<dt>TierStart</dt>
+<dd>:  The dictionary containing a specification for the Start Action of the tier</dd>
 
-TierSequence
-:  The index within the overall sequence of actioning the WorkloadSpec, for this tier
+<dt>TierSequence</dt>
+<dd>:  The index within the overall sequence of actioning the WorkloadSpec, for this tier</dd>
 
-TierSynchronization
-:  Indicator specifying whether the Stop command on the instance is executed asynchronously (defalut), or synchronously. Valid values
+<dt>TierSynchronization</dt>
+<dd>:  Indicator specifying whether the Stop command on the instance is executed asynchronously (defalut), or synchronously. Valid values
   1.  "True", or
-  2. *  "False"
+  1. *  "False"</dd>
 
-TierStop
-:  The dictionary containing a specification for the Stop Action of the tier
+<dt>TierStop</dt>
+<dd>:  The dictionary containing a specification for the Stop Action of the tier</dd>
 
-TierStopOverrideFilename
-:  (Optional) The name of the override file in the guest OS to check for existance.  If the file exists in the guest OS,
- the server will not be stopped.
+<dt>TierStopOverrideFilename</dt>
+<dd>:  (Optional) The name of the override file in the guest OS to check for existance.  If the file exists in the guest OS, the server will not be stopped.</dd>
 
-TierStopOverrideOperatingSystem
-: (Optional - required if TierStopOverrideFilename set) The name of the OS in the guest.
+<dt>TierStopOverrideOperatingSystem</dt>
+<dd>: (Optional - required if TierStopOverrideFilename set) The name of the OS in the guest.
 Valid values
   1.  "Linux", or
-  2.  "Windows"
+  1.  "Windows"</dd>
 
-TierTagValue
-: The name of the Tag *Value* that will be used as a search target for instances.  The Tag *Key* is specified in the WorkloadSpec.  In other words, the Tag Value for TierTagValue actually names the tier. 
+<dt>TierTagValue</dt>
+<dd>: The name of the Tag *Value* that will be used as a search target for instances.  The Tag *Key* is specified in the WorkloadSpec.  In other words, the Tag Value for TierTagValue actually names the tier.</dd>
+
+</dl>
 
 #### JSON: TierSpecification
 ```json
@@ -122,4 +127,3 @@ TierTagValue
   },
   "TierTagValue": "Role_Web"
 }
-----
