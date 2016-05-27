@@ -72,7 +72,6 @@ class SSMDelegate(object):
 	def sendSSMCommand(self, fileURI):
 
 		self.ssmDocumentName='AWS-RunShellScript'
-		#testOverrideFileExistenceLinuxCmd='if [ -e ' + fileURI + ' ]; then echo \"Override\"; else echo \"Continue\"; fi'		
 		testOverrideFileExistenceLinuxCmd='if [ -e ' + fileURI + ' ]; then echo \"'+ self.SCRIPT_NO_ACTION +'\"; else echo \"'+ self.SCRIPT_STOP_INSTANCE +'\"; fi'		
 		defaultDir='/tmp'
 
@@ -130,7 +129,7 @@ class SSMDelegate(object):
 		# 	u'Comment': u'Send command to test if override file exists on instance', 
 		# 	u'Status': u'Pending', 
 		# 	u'Parameters': {
-		# 		u'commands': [u'if [ -e /etc/override ]; then echo "Override"; else echo "Continue"; fi'], u'workingDirectory': [u'/tmp']
+		# 		u'commands': [u'if [ -e /etc/override ]; then echo "Bypass"; else echo "Stop"; fi'], u'workingDirectory': [u'/tmp']
 		# 	},
 		# 	u'ExpiresAfter': datetime.datetime(2016, 5, 18, 23, 9, 32, 227000, tzinfo=tzlocal()), 
 		# 	u'DocumentName': u'AWS-RunShellScript', 

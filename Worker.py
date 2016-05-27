@@ -2,6 +2,7 @@
 import boto3
 import logging
 from distutils.util import strtobool
+from SSMDelegate import SSMDelegate
 
 class Worker(object):
 	def __init__(self, region, instance):
@@ -61,12 +62,13 @@ class StopWorker(Worker):
 		super(StopWorker, self).__init__(region, instance)
 		
 		# MUST convert string False to boolean False
-		self.waitFlag=strtobool("False")
+		self.waitFlag=strtobool('False')
+		self.overrideFlag=strtobool('False')
 
 		
 	def stopInstance(self):
 
-		self.logger.info('Worker::stopInstance() called')
+		self.logger.debug('Worker::stopInstance() called')
 		
 		#EC2.Instance.stop()
 		result=self.instance.stop()
@@ -99,13 +101,57 @@ class StopWorker(Worker):
 	def getWaitFlag(self):
 		return( self.waitFlag )
 	
-	def isOverrideFlagSet(self):
-		''' Use SSM to check for existence of the override file in the guest OS.  If exists, don't Stop instance but log'''
-		return False
+	def isOverrideFlagSet(self, S3BucketName, S3KeyPrefixName, overrideFileName):
+		''' Use SSM to check for existence of the override file in the guest OS.  If exists, don't Stop instance but log.
+		Returning 'True' means the instance will not be stopped.  
+			Either because the override file exists, or the instance couldn't be reached
+		Returning 'False' means the instance will be stopped (e.g. not overridden)
+		'''
 
-	def execute(self):
-		if( self.isOverrideFlagSet() ):
-			self.logger.info('Override set for instance %s, NOT Stopping the instance' % instance.id)
+		# If there is no overrideFilename specified, we need to return False.  This is required because the
+		# remote evaluation script may evaluate to "Bypass" with a null string for the override file.  Keep in 
+		# mind, DynamodDB isn't going to enforce an override filename be set in the directive.
+		if not overrideFileName:
+			self.logger.info(self.instance.id + ' Override Flag not set in specification, ')
+			return False 
+
+		# Create the delegate
+		ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, self.region)
+
+		# Send request via SSM, and check if send was successful
+		ssmSendResult=ssmDelegate.sendSSMCommand(overrideFileName)
+		if( ssmSendResult ):
+			# Have delegate advise if override file was set on instance.  If so, the instance is not to be stopped.
+			overrideRes=ssmDelegate.retrieveSSMResults(ssmSendResult)
+			self.logger.info('SSMDelegate runTestCases() results :' + overrideRes)
+
+			if( overrideRes == SSMDelegate.DECISION_STOP_INSTANCE ):
+				# There is a result and it specifies it is ok to Stop
+				self.overrideFlag=False
+				self.logger.info(self.instance.id + ' Instance will be stopped')
+			else:
+				# Every other result means the instance will be bypassed (e.g. not stopped)
+				self.overrideFlag=True
+				self.logger.info(self.instance.id + ' Instance will be not be stopped because override file was set')
+		else:
+			self.overrideFlag=True
+			self.logger.info(self.instance.id + ' Instance will be not be stopped because SSM could not query it')
+
+
+		return( self.overrideFlag )
+
+	def setOverrideFlagSet(self, overrideFlag):
+		# Assume False
+		# Run SSM Command to instance
+		#   Associate document to instance  associate_command
+		#   Run Command (output to S3)  send_command
+		#   Set the result
+		self.overrideFlag=strtobool(overrideFlag)
+
+
+	def execute(self, S3BucketName, S3KeyPrefixName, overrideFileName):
+		if( self.isOverrideFlagSet(S3BucketName, S3KeyPrefixName, overrideFileName) ):
+			self.logger.info('Override set for instance %s, NOT Stopping the instance' % self.instance.id)
 		else:
 			self.stopInstance()
 

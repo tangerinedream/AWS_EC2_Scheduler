@@ -16,6 +16,9 @@ class Orchestrator(object):
 	ENVIRONMENT_FILTER_TAG_KEY='EnvFilterTagName'
 	ENVIRONMENT_FILTER_TAG_VALUE='EnvFilterTagValue'
 
+	SSM_S3_BUCKET_NAME='SSMS3BucketName'
+	SSM_S3_KEY_PREFIX_NAME='SSMS3KeyPrefixName'
+
 	TIER_FILTER_TAG_KEY='TierFilterTagName'
 	TIER_FILTER_TAG_VALUE='TierTagValue'
 
@@ -307,7 +310,7 @@ class Orchestrator(object):
 		for curr in targetInstanceColl:
 			self.logger.info('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
 		
-		self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s is %i' % (tierName, len(list(targetInstanceColl))))
+		self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
 
 		#if( len(targetInstanceColl) > 0 ) :
 		#for item in targetInstanceColl:
@@ -332,7 +335,7 @@ class Orchestrator(object):
 			
 			for currTier in self.sequencedTiersList:
 			
-				self.logger.info('Orchestrate() Stopping Tier: ' + currTier)
+				self.logger.info('\nOrchestrate() Stopping Tier: ' + currTier)
 			
 				# Stop the next tier in the sequence
 				self.stopATier(currTier)
@@ -347,7 +350,7 @@ class Orchestrator(object):
 			
 			for currTier in self.sequencedTiersList:
 			
-				self.logger.info('Orchestrate() Starting Tier: ' + currTier)
+				self.logger.info('\nOrchestrate() Starting Tier: ' + currTier)
 			
 				# Start the next tier in the sequence
 				self.startATier(currTier)
@@ -391,10 +394,13 @@ class Orchestrator(object):
 		
 		
 		for currInstance in instancesToStopList:
-			self.logger.info('Stopping instance %s, tierSynchronized is %s' % (currInstance, tierSynchronized))
 			stopWorker = StopWorker(region, currInstance) 
 			stopWorker.setWaitFlag(tierSynchronized)
-			stopWorker.execute()
+			stopWorker.execute(
+				self.directiveSpecDict[Orchestrator.SSM_S3_BUCKET_NAME], 
+				self.directiveSpecDict[Orchestrator.SSM_S3_KEY_PREFIX_NAME],
+				self.getTierStopOverrideFilename(tierName)
+			)
 
 		self.logger.info('stopATier() completed for tier %s' % tierName)
 
@@ -438,7 +444,7 @@ class Orchestrator(object):
 		pass
 
 	def setInterTierOrchestrationDelay(self, seconds):
-		pass
+		self.interTierOrchestrationDelay=seconds
 
 	def initLogging(self):
 		# Setup the Logger
@@ -460,13 +466,15 @@ class Orchestrator(object):
 		# print 'Role_AppServer override file loc ', self.getTierStopOverrideFilename('Role_AppServer')
 		# print 'Role_DB override file loc ', self.getTierStopOverrideFilename('Role_DB')
 		# Test Case: Stop an Environment
-		self.logger.info('### Orchestrating START Action ###')
+		self.logger.info('\n### Orchestrating START Action ###')
 		self.orchestrate(Orchestrator.ACTION_START )
 
 		# Test Case: Start an Environment
-		time.sleep(10)
+		sleepSecs=90
+		self.logger.info('\n### Sleeping for ' + str(sleepSecs) + ' seconds ###')
+		time.sleep(sleepSecs)
 
-		self.logger.info('### Orchestrating STOP Action ###')
+		self.logger.info('\n### Orchestrating STOP Action ###')
 		self.orchestrate(Orchestrator.ACTION_STOP )
 
 
