@@ -1,14 +1,34 @@
 # AWS_EC2_Scheduler
-Product is meant to allow Stopping and Starting EC2 instances based on a schedule.
+Welcome to the AWS_EC2_Scheduler, a product meant to orchestrate the Stopping and Starting of non-trivial workloads.
 
-Product Features:
+AWS_EC2_Scheduler has the following differentiating features:
+  1. Stops and Starts tiers of a workload, rather than individual instances.
+  1. Orchestrates actions (Start / Stop of tiers) in a specific order you configure.  Stop and Start sequences are independent. 
+  1. Works on your existing tags, assuming you have one that indicates the Workload (e.g. Application or Specific Environment) and a tag indicating your tiers, such as "Web" or "DB", etc...
+  1. Stops and Starts tiers either asynchronously (default) or synchronously (e.g. waits for each instance to stop before moving to the next instance within the tier).  Tiers can be set independently, for example "Web" and "DB" may be configured for asynchronous, while "DB" tier is set to synchronous.
+  1. Any instance may be flagged for bypass.  For example if you had 3 database instances within the "DB" tier, you indicate DB instance #2 should not be Stopped today.  All instances in the "DB" tier would be stopped with the exception of DB #2.
+  1. Many workloads can be configured and supported.
+
+## What to do next
+Do a once over on the documentation, then try it out.
+  1. Address the SSM Prerequisites
+    1. Create an S3 bucket for the SSM processing
+    1. Configure Lifecycle rules on your bucket for 1 day, you shouldn't need more
+    1. Ensure your IAM *instance roles* are enabled for the SSM agent.  Use AmazonEC2RoleforSSM (instance trust policy) and please ensure you understand how SSM works prior to use.  [Here is a link](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html, "SSM Instance Role Permissions")
+    1. [Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html)
+  1. Create your DynamoDB tables
+    1. Ensure correct table naming, and
+    1. Ensure correct provisioned throughput
+
+
+
 
 Prerequisites:
-1. instance role set, allowing SSM agent to operate
-2. SSM is installed on each instance
-3. Configure a bucket on S3 for SSM processing
-4. (Optional) Set Lifecycle Rules on S3 bucket
-5. DynamoDB tables
+  1. instance role set, allowing SSM agent to operate
+  2. SSM is installed on each instance
+  3. Configure a bucket on S3 for SSM processing
+  4. (Optional) Set Lifecycle Rules on S3 bucket
+  5. DynamoDB tables
 
 
 ## Ubuntu example
@@ -63,6 +83,7 @@ The workload specification contains tier independent configuration of the worklo
   "SSMS3KeyPrefixName": "ssmRemoteComandResults",
   "TierFilterTagName": "Role"
 }
+```
 
 ### TierSpecification
 The tier specification represent the tier-specific configuration.  A tier means as set of instances that share the same Tag Value.  For example, a tier could be "Web", or "App", or "DB", or however your architecture is laid out.  Within a tier, there may be one or more instances.  As there may be multiple rows for a given WorkloadSpecification, each Tier contains the Workload identifier.
@@ -127,3 +148,6 @@ Valid values
   },
   "TierTagValue": "Role_Web"
 }
+```
+
+## The Override Capability
