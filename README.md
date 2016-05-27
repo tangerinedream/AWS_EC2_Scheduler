@@ -14,31 +14,17 @@ Do a once over on the documentation, then try it out.
   1. Address the SSM Prerequisites
     1. Create an S3 bucket for the SSM processing
     1. Configure Lifecycle rules on your bucket for 1 day, you shouldn't need more
-    1. Ensure your IAM *instance roles* are enabled for the SSM agent.  Use AmazonEC2RoleforSSM (instance trust policy) and please ensure you understand how SSM works prior to use.  [Here is a link](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html, "SSM Instance Role Permissions")
-    1. [Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html)
+    1. [Ensure your IAM *instance roles* are enabled for the SSM agent.  Use AmazonEC2RoleforSSM (instance trust policy) and please ensure you understand how SSM works prior to use.](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html, "SSM Instance Role Permissions").  For a full set of SSM Prerequsites, look [Here](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/remote-commands-prereq.html)
+    1. [Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html "Installing SSM")
   1. Create your DynamoDB tables
     1. Ensure correct table naming, and
     1. Ensure correct provisioned throughput
-
-
-
-
-Prerequisites:
-  1. instance role set, allowing SSM agent to operate
-  2. SSM is installed on each instance
-  3. Configure a bucket on S3 for SSM processing
-  4. (Optional) Set Lifecycle Rules on S3 bucket
-  5. DynamoDB tables
-
-
-## Ubuntu example
-cd /tmp			
-curl https://amazon-ssm-us-west-2.s3.amazonaws.com/latest/debian_amd64/amazon-ssm-agent.deb -o amazon-ssm-agent.deb
-
-See also:
-  http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/remote-commands-prereq.html
-    http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html
-    http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html
+    1. Create a single row for the workload, and one or more rows for each tier.  Details are below.
+  1. Address Tag Requirements
+    1. Ensure your workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Environment", Tag Value is "ENV001"), and that all instances to be orchestrated for that workload are tagged as such.
+    1. Ensure each tier within the workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Role", Tag Value is "Web", or Tag Value is "DB", etc..)
+  1. Enable Cron or Lambda with Scheduling Actions to launch the Orchestrator python script, which does the work.
+    1. Ensure your IAM *instance roles* are established to make calls to DynamoDB, EC2, S3, and SSM (Need more detail here)
 
 
 ## DynamoDB Tables
