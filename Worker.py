@@ -101,7 +101,7 @@ class StopWorker(Worker):
 	def getWaitFlag(self):
 		return( self.waitFlag )
 	
-	def isOverrideFlagSet(self, S3BucketName, S3KeyPrefixName, overrideFileName):
+	def isOverrideFlagSet(self, S3BucketName, S3KeyPrefixName, overrideFileName, osType):
 		''' Use SSM to check for existence of the override file in the guest OS.  If exists, don't Stop instance but log.
 		Returning 'True' means the instance will not be stopped.  
 			Either because the override file exists, or the instance couldn't be reached
@@ -112,14 +112,19 @@ class StopWorker(Worker):
 		# remote evaluation script may evaluate to "Bypass" with a null string for the override file.  Keep in 
 		# mind, DynamodDB isn't going to enforce an override filename be set in the directive.
 		if not overrideFileName:
-			self.logger.info(self.instance.id + ' Override Flag not set in specification, ')
-			return False 
+			self.logger.info(self.instance.id + ' Override Flag not set in specification.  Therefore this instance will be actioned. ')
+			return False
+
+		if not osType:
+			self.logger.info(self.instance.id + ' Override Flag set BUT no Operating System attribute in specification. Therefore this instance will be actioned.')
+			return False
+
 
 		# Create the delegate
 		ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, self.region)
 
 		# Send request via SSM, and check if send was successful
-		ssmSendResult=ssmDelegate.sendSSMCommand(overrideFileName)
+		ssmSendResult=ssmDelegate.sendSSMCommand(overrideFileName, osType)
 		if( ssmSendResult ):
 			# Have delegate advise if override file was set on instance.  If so, the instance is not to be stopped.
 			overrideRes=ssmDelegate.retrieveSSMResults(ssmSendResult)
@@ -149,8 +154,8 @@ class StopWorker(Worker):
 		self.overrideFlag=strtobool(overrideFlag)
 
 
-	def execute(self, S3BucketName, S3KeyPrefixName, overrideFileName):
-		if( self.isOverrideFlagSet(S3BucketName, S3KeyPrefixName, overrideFileName) ):
+	def execute(self, S3BucketName, S3KeyPrefixName, overrideFileName, osType):
+		if( self.isOverrideFlagSet(S3BucketName, S3KeyPrefixName, overrideFileName, osType) ):
 			self.logger.info('Override set for instance %s, NOT Stopping the instance' % self.instance.id)
 		else:
 			self.stopInstance()

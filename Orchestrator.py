@@ -22,12 +22,23 @@ class Orchestrator(object):
 	TIER_FILTER_TAG_KEY='TierFilterTagName'
 	TIER_FILTER_TAG_VALUE='TierTagValue'
 
+
+	WORKLOAD_SPEC_TABLE_NAME='WorkloadSpecification'
+	WORKLOAD_SPEC_PARTITION_KEY='SpecName'
+
+	TIER_SPEC_TABLE_NAME='TierSpecification'
+	TIER_SPEC_PARTITION_KEY='SpecName'
+
 	TIER_STOP='TierStop'
 	TIER_START='TierStart'
 	TIER_NAME='TierTagValue'
 	TIER_SEQ_NBR='TierSequence'
 	TIER_SYCHRONIZATION='TierSynchronization'
 	TIER_STOP_OVERRIDE_FILENAME='TierStopOverrideFilename'
+	TIER_STOP_OS_TYPE='TierStopOverrideOperatingSystem' # Valid values are Linux and Windows
+
+	INTER_TIER_ORCHESTRATION_DELAY='InterTierOrchestrationDelay' # The sleep time between commencing an action on this tier
+	INTER_TIER_ORCHESTRATION_DELAY_DEFAULT = 5
 
 	ACTION_STOP='Stop'
 	ACTION_START='Start'
@@ -36,9 +47,7 @@ class Orchestrator(object):
 
 	def __init__(self, partitionTargetValue, region='us-west-2'):
 		# default to us-west-2
-		self.region=region 					
-		# number of seconds to delay inbetween tier orchestration
-		self.interTierOrchestrationDelay= 5 
+		self.region=region 
 		
 		###
 		# DynamoDB Table Related
@@ -46,13 +55,13 @@ class Orchestrator(object):
 		self.dynDBC = boto3.client('dynamodb', region_name=self.region)
 
 		# Directive DynamoDB Table Related
-		self.directiveSpecTableName='DirectiveSpec'
-		self.directiveSpecPartitionKey='SpecName'
+		self.workloadSpecificationTableName=Orchestrator.WORKLOAD_SPEC_TABLE_NAME
+		self.workloadSpecificationPartitionKey=Orchestrator.WORKLOAD_SPEC_PARTITION_KEY
 		self.partitionTargetValue=partitionTargetValue
 
 		# Tier-specific DynamoDB Table Related
-		self.tierSpecTableName='TierSpecification'
-		self.tierSpecPartitionKey='SpecName'  # Same as directiveSpecPartitionKey
+		self.tierSpecTableName=Orchestrator.TIER_SPEC_TABLE_NAME
+		self.tierSpecPartitionKey=Orchestrator.TIER_SPEC_PARTITION_KEY # Same as workloadSpecificationPartitionKey
 
 		# Table requires the DynamoDB.Resource
 		self.dynDBR = boto3.resource('dynamodb', region_name=self.region)
@@ -78,7 +87,7 @@ class Orchestrator(object):
 		#	"TierFilterTagName" : "Role",
 		# }
 		#
-		self.directiveSpecDict={}
+		self.workloadSpecificationDict={}
 
 		# {
 		#   "SpecName": "BotoTestCase1",
@@ -119,29 +128,24 @@ class Orchestrator(object):
 	def initializeState(self):
 
 		# Grab general workload information from DynamoDB
-		self.lookupDirectiveSpec(self.partitionTargetValue)
+		self.lookupWorkloadSpecification(self.partitionTargetValue)
 
 		# Grab tier specific workload information from DynamoDB
 		self.lookupTierSpecs(self.partitionTargetValue)
 
-		# Establish the tier sequence for the requested action
-		# if( self.action == Orchestrator.ACTION_STOP):
-		# 	self.sequenceTiers(Orchestrator.TIER_STOP)
-		# elif( self.action == Orchestrator.ACTION_START):
-		# 	self.sequenceTiers(Orchestrator.TIER_START)
 
-	def lookupDirectiveSpec(self, partitionTargetValue):
+	def lookupWorkloadSpecification(self, partitionTargetValue):
 		try:
 			dynamodbItem=self.dynDBC.get_item(
-				TableName=self.directiveSpecTableName,
+				TableName=self.workloadSpecificationTableName,
 				Key={
-					self.directiveSpecPartitionKey : { "S" : partitionTargetValue }
+					self.workloadSpecificationPartitionKey : { "S" : partitionTargetValue }
 				},
 				ConsistentRead=False,
 				ReturnConsumedCapacity="TOTAL",
 			)
 		except ClientError as e:
-			self.logger.warning('In lookupDirectiveSpec()' + e.response['Error']['Message'])
+			self.logger.warning('In lookupWorkloadSpecification()' + e.response['Error']['Message'])
 		else:
 			# Get the item from the result
 			resultItem=dynamodbItem['Item']
@@ -149,11 +153,12 @@ class Orchestrator(object):
 			for attributeName in resultItem:
 				#print "AttributeName: ", attributeName
 				attributeValue=resultItem[attributeName].values()[0]
+				self.logger.info('Directive Attribute [%s maps to %s]' % (attributeName, attributeValue))
 				#print "AttributeValue: ", attributeValue + '\n'
 
-				self.directiveSpecDict[attributeName]=attributeValue
+				self.workloadSpecificationDict[attributeName]=attributeValue
 
-			self.logSpecDict('lookupDirectiveSpec')
+			self.logSpecDict('lookupWorkloadSpecification')
 			#
 			#self.processItemJSON(resultItem)
 			#
@@ -180,12 +185,19 @@ class Orchestrator(object):
 
 			# Create a Dictionary that stores the attributes and attributeValues associated with Tiers
 			for attribute in resultItems:
-				# print "Tier Tag Value ==>", attribute['TierTagValue']
-				# print "TIER_START==>", attribute[Orchestrator.TIER_START]
-				# print '\n'
-				# print "TIER_STOP==>", attribute[Orchestrator.TIER_STOP]
-				# print '\n\n'
-				self.tierSpecDict[attribute['TierTagValue']]={Orchestrator.TIER_STOP : attribute[Orchestrator.TIER_STOP], Orchestrator.TIER_START : attribute[Orchestrator.TIER_START]}
+
+				#self.tierSpecDict[attribute['TierTagValue']]={Orchestrator.TIER_STOP : attribute[Orchestrator.TIER_STOP], Orchestrator.TIER_START : attribute[Orchestrator.TIER_START]}
+				# Pull out the Dictionaries for each of the below. 
+				# Result is a key, and a dictionary
+				self.tierSpecDict[ attribute[Orchestrator.TIER_NAME] ] = {
+					Orchestrator.TIER_STOP : attribute[ Orchestrator.TIER_STOP ], 
+					Orchestrator.TIER_START : attribute[ Orchestrator.TIER_START ]
+				}
+
+				self.logger.info('Tier %s:' % attribute[ Orchestrator.TIER_NAME ])
+				for key, value in attribute.iteritems():
+					self.logger.info('%s contains %s' % (key, value))
+
 
 			# Log the constructed Tier Spec Dictionary
 			self.logSpecDict('lookupTierSpecs')
@@ -226,11 +238,11 @@ class Orchestrator(object):
 	
 
 	def printSpecDict(self, label):
-		for key, value in self.directiveSpecDict.iteritems():
+		for key, value in self.workloadSpecificationDict.iteritems():
 			print '%s (key==%s, value==%s)' % (label, key, value)
 
 	def logSpecDict(self, label):
-		for key, value in self.directiveSpecDict.iteritems():
+		for key, value in self.workloadSpecificationDict.iteritems():
 			self.logger.debug('%s (key==%s, value==%s)' % (label, key, value))
 
 	def isTierSynchronized(self, tierName, tierAction):
@@ -276,6 +288,44 @@ class Orchestrator(object):
 			res = ''
 
 		return( res )
+
+	def getTierOperatingSystemType(self, tierName):
+
+		# Get the Tier Named tierName
+		tierAttributes = self.tierSpecDict[tierName]
+
+		# Get the dictionary for the correct Action
+		tierActionAttribtes={}
+
+		# Locate the TIER_STOP Dictionary
+		tierActionAttributes = tierAttributes[Orchestrator.TIER_STOP]
+		
+		# Return the value in the Dict for TierStopOverrideOperatingSystem
+		if Orchestrator.TIER_STOP_OS_TYPE in tierActionAttributes:
+			res = tierActionAttributes[Orchestrator.TIER_STOP_OS_TYPE]
+		else:
+			res = ''
+
+		return( res )
+
+	def getInterTierOrchestrationDelay(self, tierName, tierAction):
+
+		# Get the Tier Named tierName
+		tierAttributes = self.tierSpecDict[tierName]
+
+		# Get the dictionary for the correct Action
+		tierActionAttribtes={}
+
+		# Locate the TIER_STOP Dictionary
+		tierActionAttributes = tierAttributes[tierAction]
+		
+		# Return the value in the Dict for TierStopOverrideOperatingSystem
+		if Orchestrator.INTER_TIER_ORCHESTRATION_DELAY in tierActionAttributes:
+			res = tierActionAttributes[Orchestrator.INTER_TIER_ORCHESTRATION_DELAY]
+		else:
+			res = Orchestrator.INTER_TIER_ORCHESTRATION_DELAY_DEFAULT
+
+		return( float(res) )
 	
 	def lookupInstancesByFilter(self, targetInstanceStateKey, tierName):
 	    # Use the filter() method of the instances collection to retrieve
@@ -283,10 +333,10 @@ class Orchestrator(object):
 		self.logger.info('In lookupInstancesByFilter() seeking instances in tier %s' % tierName)
 		#self.printSpecDict('lookupInstancesByFilter')
 		self.logger.debug('lookupInstancesByFilter() instance state %s' % targetInstanceStateKey)
-		self.logger.debug('lookupInstancesByFilter() tier tag key %s' % self.directiveSpecDict[Orchestrator.TIER_FILTER_TAG_KEY])
+		self.logger.debug('lookupInstancesByFilter() tier tag key %s' % self.workloadSpecificationDict[Orchestrator.TIER_FILTER_TAG_KEY])
 		self.logger.debug('lookupInstancesByFilter() tier tag value %s' % tierName)
-		self.logger.debug('lookupInstancesByFilter() Env tag key %s' % self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY])
-		self.logger.debug('lookupInstancesByFilter() Env tag value %s' % self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE])
+		self.logger.debug('lookupInstancesByFilter() Env tag key %s' % self.workloadSpecificationDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY])
+		self.logger.debug('lookupInstancesByFilter() Env tag value %s' % self.workloadSpecificationDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE])
 
 
 		targetFilter = [
@@ -295,11 +345,11 @@ class Orchestrator(object):
 		        'Values': [targetInstanceStateKey]
 		    },
 		    {
-		        'Name': 'tag:' + self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY],
-		        'Values': [self.directiveSpecDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE]]
+		        'Name': 'tag:' + self.workloadSpecificationDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY],
+		        'Values': [self.workloadSpecificationDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE]]
 		    },
 		    {
-		        'Name': 'tag:' + self.directiveSpecDict[Orchestrator.TIER_FILTER_TAG_KEY],
+		        'Name': 'tag:' + self.workloadSpecificationDict[Orchestrator.TIER_FILTER_TAG_KEY],
 		        'Values': [tierName]
 		    }
 		]
@@ -340,8 +390,6 @@ class Orchestrator(object):
 				# Stop the next tier in the sequence
 				self.stopATier(currTier)
 				
-				# Delay (if specified) prior to iterating to the next tier
-				time.sleep(self.interTierOrchestrationDelay)
 
 		elif( action == Orchestrator.ACTION_START ): 
 			
@@ -354,9 +402,6 @@ class Orchestrator(object):
 			
 				# Start the next tier in the sequence
 				self.startATier(currTier)
-			
-				# Delay (if specified) prior to iterating to the next tier
-				time.sleep(self.interTierOrchestrationDelay)
 
 		elif( action not in self.validActionNames ):
 			
@@ -379,28 +424,33 @@ class Orchestrator(object):
 		4) Log 
 		'''
 		
-
-		running=self.instanceStateMap[16]
-
 		# Find the running instances of this tier to stop
+		running=self.instanceStateMap[16]
 		instancesToStopList = self.lookupInstancesByFilter(
 			running, 
 			tierName
 		)
 
 
-		region=self.directiveSpecDict[self.SPEC_REGION_KEY]
+		region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
 		tierSynchronized=self.isTierSynchronized(tierName, Orchestrator.TIER_STOP)
+
+
 		
 		
 		for currInstance in instancesToStopList:
 			stopWorker = StopWorker(region, currInstance) 
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
-				self.directiveSpecDict[Orchestrator.SSM_S3_BUCKET_NAME], 
-				self.directiveSpecDict[Orchestrator.SSM_S3_KEY_PREFIX_NAME],
-				self.getTierStopOverrideFilename(tierName)
+				self.workloadSpecificationDict[Orchestrator.SSM_S3_BUCKET_NAME], 
+				self.workloadSpecificationDict[Orchestrator.SSM_S3_KEY_PREFIX_NAME],
+				self.getTierStopOverrideFilename(tierName),
+				self.getTierOperatingSystemType(tierName)
 			)
+
+		# Delay to be introduced prior to allowing the next tier to be actioned.
+		# It may make sense to allow some amount of time for the instances to Stop, prior to Orchestration continuing.
+		time.sleep(self.getInterTierOrchestrationDelay(tierName, Orchestrator.TIER_STOP))
 
 		self.logger.info('stopATier() completed for tier %s' % tierName)
 
@@ -423,7 +473,7 @@ class Orchestrator(object):
 			tierName
 		)
 
-		region=self.directiveSpecDict[self.SPEC_REGION_KEY]
+		region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
 		syncFlag=self.isTierSynchronized(tierName, Orchestrator.TIER_START)
 
 		self.logger.debug('In startATier() for %s', tierName)
@@ -431,6 +481,10 @@ class Orchestrator(object):
 			self.logger.debug('Starting instance %s', currInstance)
 			startWorker = StartWorker(region, currInstance)
 			startWorker.execute()
+
+		# Delay to be introduced prior to allowing the next tier to be actioned.
+		# It may make sense to allow some amount of time for the instances to Stop, prior to Orchestration continuing.
+		time.sleep(self.getInterTierOrchestrationDelay(tierName, Orchestrator.TIER_START))
 
 		self.logger.debug('startATier() completed for tier %s' % tierName)
 
@@ -442,9 +496,6 @@ class Orchestrator(object):
 
 	def scaleInstance(self, direction):
 		pass
-
-	def setInterTierOrchestrationDelay(self, seconds):
-		self.interTierOrchestrationDelay=seconds
 
 	def initLogging(self):
 		# Setup the Logger

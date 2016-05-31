@@ -3,6 +3,7 @@ Welcome to the AWS_EC2_Scheduler, a product meant to orchestrate the Stopping an
 
 AWS_EC2_Scheduler has the following differentiating features:
   1. Stops and Starts tiers of a workload, rather than individual instances.
+  1. Stops and Starts in an orderly fashion, tier by tier.
   1. Orchestrates actions (Start / Stop of tiers) in a specific order you configure.  Stop and Start sequences are independent. 
   1. Works on your existing tags, assuming you have one that indicates the Workload (e.g. Application or Specific Environment) and a tag indicating your tiers, such as "Web" or "DB", etc...
   1. Stops and Starts tiers either asynchronously (default) or synchronously (e.g. waits for each instance to stop before moving to the next instance within the tier).  Tiers can be set independently, for example "Web" and "DB" may be configured for asynchronous, while "DB" tier is set to synchronous.
@@ -36,25 +37,25 @@ The workload specification contains tier independent configuration of the worklo
 
 <dl>
 <dt>EnvFilterTagName</dt>
-<dd>:  The name of the tag *key* on the instance which contains a tag *value* indicating the Workload (aka the Environment Name)</dd>
+<dd>:  The name of the tag *key* (on the instance) that will be used to group the unique members of this workload.  In the example DynamoDB Table, "Environment" is the tag key. </dd>
 
 <dt>EnvFilterTagValue</dt>
-<dd>: The tag *value* containing the Workload identifyier (aka Environment name)</dd>
+<dd>: The tag *value* identifying the unique set of members within the EnvFilterTagName. In the example DynamoDB Table, "ENV001" is the tag value</dd>
 
 <dt>Region</dt>
-<dd>: The AWS region identifier **where the workload runs, **not** where the region where this product runs</dd>
+<dd>: The AWS region identifier where the _workload_ runs, **not** the region where this open source product is executed</dd>
 
 <dt>SpecName</dt>
-<dd>: The name of the Workload</dd>
+<dd>: The unique name of the Workload, the key of the WorkloadSpecification table and foreign key of the TierSpecification table</dd>
 
 <dt>SSMS3BucketName</dt>
-<dd>:  The name of the bucket where the SSM results will be places.  I suggest you enable S3 Lifecycle rules on the bucket as the SSM Agent creates a new entry everytime it checks an instance</dd>
+<dd>:  The name of the bucket where the SSM results will be places.  *Note*: It is suggested you enable S3 Lifecycle rules on the bucket as the SSM Agent creates a new entry everytime it checks an instance</dd>
 
 <dt>SSMS3KeyPrefixName</dt>
 <dd>: The path off the S3BucketName</dd>
 
 <dt>TierFilterTagName</dt>
-<dd>: The name of the tag *key* on the instance used to locate the Tier's Value.</dd>
+<dd>: The name of the tag *key* on the instance used to identify the Tier.</dd>
 
 </dl>
 
@@ -77,18 +78,18 @@ The tier specification represent the tier-specific configuration.  A tier means 
 The tier specification is somewhat more complex than the WorkloadSpecification, as it contains nested configuration.  That is because a tier has configuration information for Starting, which is different than Stopping.  
 
 Here are a few things you **need** to know about the Tier Specification:
-1. The name of *this* tier, is found as the tag value of "TierTagValue" (imagine that).  
-   * Each tier name must be unique
-2. The Tier Sequence indicates *this* tier's placement is, within the overall sequence.  
-   * Numbering starts at **zero**
-   * There is no upper bound on sequence number.
-   * In the example below, the Tier named "Role_Web" will be the first tier stopped (e.g. TierSequence == 0) and last tier started, in a 3 tier architecture (e.g. TierSequence is 2) 
+  1. The name of *this* tier, is found as the tag value of "TierTagValue" (imagine that).  
+    * Each tier name must be unique
+  1. The Tier Sequence indicates *this* tier's placement is, within the overall sequence.  
+    * Numbering starts at **zero**
+    * There is no upper bound on sequence number.
+    * In the example below, the Tier named "Role_Web" will be the first tier stopped (e.g. TierSequence == 0) and last tier started, in a 3 tier architecture (e.g. TierSequence is 2) 
 
 Definition List
 <dl>
 
 <dt>SpecName</dt>
-<dd>:  The name tying the tier back to the WorkloadSpecification</dd>
+<dd>: The unique name of the Workload, the key of the WorkloadSpecification table and foreign key of the TierSpecification table</dd>
 
 <dt>TierStart</dt>
 <dd>:  The dictionary containing a specification for the Start Action of the tier</dd>
@@ -97,9 +98,10 @@ Definition List
 <dd>:  The index within the overall sequence of actioning the WorkloadSpec, for this tier</dd>
 
 <dt>TierSynchronization</dt>
-<dd>:  Indicator specifying whether the Stop command on the instance is executed asynchronously (defalut), or synchronously. Valid values
-  1.  "True", or
-  1. *  "False"</dd>
+<dd>:  Indicator specifying whether the Stop command on the instance is executed asynchronously (defalut), or synchronously. Valid values are "True" or "False"</dd>
+
+<dt>InterTierOrchestrationDelay</dt>
+<dd>:  The number of seconds to delay before actioning on the next tier.  Typically, you have a sense for how long to wait for the current tier to start or stop.  </dd>
 
 <dt>TierStop</dt>
 <dd>:  The dictionary containing a specification for the Stop Action of the tier</dd>
@@ -109,12 +111,10 @@ Definition List
 
 <dt>TierStopOverrideOperatingSystem</dt>
 <dd>: (Optional - required if TierStopOverrideFilename set) The name of the OS in the guest.
-Valid values
-  1.  "Linux", or
-  1.  "Windows"</dd>
+Valid values are "Linux", or "Windows"</dd>
 
 <dt>TierTagValue</dt>
-<dd>: The name of the Tag *Value* that will be used as a search target for instances.  The Tag *Key* is specified in the WorkloadSpec.  In other words, the Tag Value for TierTagValue actually names the tier.</dd>
+<dd>: The name of the Tag *Value* that will be used as a search target for instances for this particular tier.  The Tag *Key* is specified in the WorkloadSpec.</dd>
 
 </dl>
 
@@ -130,6 +130,24 @@ Valid values
     "TierSequence": "0",
     "TierStopOverrideFilename": "/tmp/StopOverride",
     "TierStopOverrideOperatingSystem": "Linux",
+    "TierSynchronization": "False",
+    "InterTierOrchestrationDelay": "10"
+  },
+  "TierTagValue": "Role_Web"
+}
+```
+Or, for Windows guest OS ...
+```json
+{
+  "SpecName": "BotoTestCase1",
+  "TierStart": {
+    "TierSequence": "2",
+    "TierSynchronization": "False"
+  },
+  "TierStop": {
+    "TierSequence": "0",
+    "TierStopOverrideFilename": "C:\ignore.txt",
+    "TierStopOverrideOperatingSystem": "Windows",
     "TierSynchronization": "False"
   },
   "TierTagValue": "Role_Web"

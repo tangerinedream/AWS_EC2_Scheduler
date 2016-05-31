@@ -36,6 +36,11 @@ class SSMDelegate(object):
 
 	SCRIPT_STOP_INSTANCE='Stop'
 	SCRIPT_NO_ACTION='Bypass'  # Bypass means skip stopping this instance
+
+	OS_TYPE_LINUX = 'Linux'
+	OS_TYPE_WINDOWS = 'Windows'
+
+	SSM_COMMAND_ID = 'CommandId'
 	
 
 	def __init__(self, instanceId, bucketName, keyPrefixName, region_name='us-west-2'):
@@ -69,11 +74,17 @@ class SSMDelegate(object):
 		
 
 
-	def sendSSMCommand(self, fileURI):
+	def sendSSMCommand(self, fileURI, osType):
 
-		self.ssmDocumentName='AWS-RunShellScript'
-		testOverrideFileExistenceLinuxCmd='if [ -e ' + fileURI + ' ]; then echo \"'+ self.SCRIPT_NO_ACTION +'\"; else echo \"'+ self.SCRIPT_STOP_INSTANCE +'\"; fi'		
-		defaultDir='/tmp'
+		# defaults to Linux
+		if( osType == SSMDelegate.OS_TYPE_WINDOWS ):
+			self.ssmDocumentName='AWS-RunPowerShellScript'
+			testOverrideFileCommand='@echo off & IF exist ' + fileURI + ' ( echo '+ self.SCRIPT_NO_ACTION +' ) ELSE ( echo '+ self.SCRIPT_STOP_INSTANCE +' )'
+			defaultDir='C:'
+		else: #default to OS_TYPE_LINUX
+			self.ssmDocumentName='AWS-RunShellScript'
+			testOverrideFileCommand='if [ -e ' + fileURI + ' ]; then echo \"'+ self.SCRIPT_NO_ACTION +'\"; else echo \"'+ self.SCRIPT_STOP_INSTANCE +'\"; fi'		
+			defaultDir='/tmp'
 
 		try:
 			# the 'commands' is the name of the property within the AWS-RunShellScript
@@ -87,7 +98,7 @@ class SSMDelegate(object):
 			    ],
 			    Parameters={
 			        'commands': [
-			            testOverrideFileExistenceLinuxCmd,
+			            testOverrideFileCommand,
 			        ],
 			        'workingDirectory' : [
 			        	defaultDir,
@@ -106,7 +117,9 @@ class SSMDelegate(object):
 			for key, value in response.iteritems():
 				self.logger.debug('(key==%s, value==%s)' % (key, value))
 
-			self.logger.info('SSMDelegate send_command() results :')		
+			self.logger.info('SSMDelegate send_command() results :')	
+			self.logger.info('Operating System: ' + osType)
+			self.logger.info('Command attempted: ' + testOverrideFileCommand)	
 			self.logger.info('CommandId:  ' + self.getAttributeFromSSMSendCommand(response, 'CommandId'))
 			self.logger.info('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
 
@@ -148,7 +161,7 @@ class SSMDelegate(object):
 		#
 		result = self.DECISION_NO_ACTION  # By default, we will not shut down the instance
 		
-		self.commandId = self.getAttributeFromSSMSendCommand(ssmResponse, 'CommandId')
+		self.commandId = self.getAttributeFromSSMSendCommand(ssmResponse, SSMDelegate.SSM_COMMAND_ID)
 
 		# Do we have a commandId from the sendCommand response?
 		if self.commandId:		
@@ -199,8 +212,10 @@ class SSMDelegate(object):
 		# Default is DECISION_NO_ACTION
 		if( result == self.DECISION_STOP_INSTANCE ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' will be stopped')
+		elif( result == self.DECISION_NO_ACTION ):
+			self.logger.info('InstanceId: ' + self.instanceId + ' has override file and will NOT be stopped')
 		else:
-			self.logger.info('InstanceId: ' + self.instanceId + ' has override file or is inaccessible will NOT be stopped')
+			self.logger.info('InstanceId: ' + self.instanceId + ' unexpected SSM result ==>'+ result +'<==, or inaccessible instance.  Instance will NOT be stopped')
 
 		return( result )
 
