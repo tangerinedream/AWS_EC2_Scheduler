@@ -3,10 +3,14 @@ import boto3
 import json
 import logging
 import time
+#import sys, getopt
+import argparse
 from distutils.util import strtobool
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 from Worker import Worker, StopWorker, StartWorker
+
+__author__ = "Gary Silverman"
 
 class Orchestrator(object):
 
@@ -530,7 +534,29 @@ class Orchestrator(object):
 
 
 if __name__ == "__main__":
-	orchMain = Orchestrator('BotoTestCase1', 'us-west-2')
-	orchMain.runTestCases()
+	# python Orchestrator.py -i workloadIdentier -r us-west-2
+
+	parser = argparse.ArgumentParser(description='Command line parser')
+	parser.add_argument('-i','--workloadIdentifier', help='Workload Identifier to Action Upon',required=True)
+	parser.add_argument('-r','--workloadRegion', help='Region where the Workload is running', required=True)
+	parser.add_argument('-a','--action', help='Action to Orchestrate (e.g. Stop or Start)', required=True)
+	#parser.add_argument('-t','--testcases', nargs='?', help='Run the test cases', required=False)
+	parser.add_argument('-t','--testcases', help='Run the test cases', required=False)
+	args = parser.parse_args()
+
+	orchMain = Orchestrator(args.workloadIdentifier, args.workloadRegion)
+	if( args.testcases ):
+		orchMain.runTestCases()
+	else:
+		action = args.action
+		validActions = [Orchestrator.ACTION_STOP, Orchestrator.ACTION_START]
+		if( action in validActions ):
+			orchMain.logger.info('\n### Orchestrating %s' % action +' Action ###')
+			orchMain.initializeState()
+			orchMain.orchestrate(action)
+		else:
+			orchMain.logger.warning('Action specified %s is not a valid Action per the validActions list %s' % (action, str(validActions)))
+			exit(2)
+
 	
 

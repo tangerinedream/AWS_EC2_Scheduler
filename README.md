@@ -95,7 +95,7 @@ Definition List
 <dd>:  The dictionary containing a specification for the Start Action of the tier</dd>
 
 <dt>TierSequence</dt>
-<dd>:  The index within the overall sequence of actioning the WorkloadSpec, for this tier</dd>
+<dd>:  The numeric index within the overall sequence of actioning the WorkloadSpec, for this tier. **NOTE** The index of the "first" tier to be actioned, starts at 0 (e.g. ZERO), not 1 (one).</dd>
 
 <dt>TierSynchronization</dt>
 <dd>:  Indicator specifying whether the Stop command on the instance is executed asynchronously (defalut), or synchronously. Valid values are "True" or "False"</dd>
