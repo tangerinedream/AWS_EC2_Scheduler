@@ -25,7 +25,24 @@ Do a once over on the documentation, then try it out.
     1. Ensure your workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Environment", Tag Value is "ENV001"), and that all instances to be orchestrated for that workload are tagged as such.
     1. Ensure each tier within the workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Role", Tag Value is "Web", or Tag Value is "DB", etc..)
   1. Enable Cron or Lambda with Scheduling Actions to launch the Orchestrator python script, which does the work.
-    1. Ensure your IAM *instance roles* are established to make calls to DynamoDB, EC2, S3, and SSM (Need more detail here)
+    1. Ensure your IAM *instance roles* are established to make calls to DynamoDB, EC2, S3, and SSM (Need more detail here) *The below is DRAFT only*
+      1. DynamoDB
+        1. dynamodb:CreateTable
+        1. dynamodb:GetItem
+        1. dynamodb:PutItem
+        1. dynamodb:Query
+        1. dynamodb:DeleteItem
+      1. EC2
+        1. ec2:StartInstances
+        1. ec2:StopInstances
+        1. ec2:DescribeTags
+      1. S3
+        1. s3:CreateBucket
+        1. s3:GetObject
+        1. s3:ListBucket
+        1. s3:PutObject
+      1. SSM - See the SSM Section for details
+
 
 
 ## DynamoDB Tables
