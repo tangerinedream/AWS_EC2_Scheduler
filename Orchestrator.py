@@ -20,6 +20,8 @@ class Orchestrator(object):
 	ENVIRONMENT_FILTER_TAG_KEY='EnvFilterTagName'
 	ENVIRONMENT_FILTER_TAG_VALUE='EnvFilterTagValue'
 
+	VPC_ID_KEY='VPC_ID'
+
 	SSM_S3_BUCKET_NAME='SSMS3BucketName'
 	SSM_S3_KEY_PREFIX_NAME='SSMS3KeyPrefixName'
 
@@ -49,9 +51,12 @@ class Orchestrator(object):
 	ACTION_SCALE_UP='ScaleUp'
 	ACTION_SCALE_DOWN='ScaleDown'
 
-	def __init__(self, partitionTargetValue, region='us-west-2'):
+	def __init__(self, partitionTargetValue, region='us-west-2', dryRun=False):
 		# default to us-west-2
 		self.region=region 
+
+		# The commmand line param will be passed as a string
+		self.dryRunFlag=dryRun
 		
 		###
 		# DynamoDB Table Related
@@ -358,6 +363,15 @@ class Orchestrator(object):
 		    }
 		]
 
+		# If the Optional VPC ID was provided to further tighten the filter, include it.
+		if( Orchestrator.VPC_ID_KEY in self.workloadSpecificationDict ):
+			vpc_filter_dict_element = { 
+				'Name': 'vpc-id', 
+		        'Values': [self.workloadSpecificationDict[Orchestrator.VPC_ID_KEY]]
+			}
+			targetFilter.append(vpc_filter_dict_element)
+			self.logger.info('VPC_ID provided, Filter List is %s' % str(targetFilter))
+
 		# Filter the instances
 		# NOTE: Only instances within the specified region are returned
 		targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
@@ -365,12 +379,6 @@ class Orchestrator(object):
 			self.logger.info('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
 		
 		self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
-
-		#if( len(targetInstanceColl) > 0 ) :
-		#for item in targetInstanceColl:
-		#	self.logger.debug('Target instance found :', item)
-		# else:
-		# 	self.logger.info('In lookupInstancesByFilter() no instances found based on filter')
 
 		return targetInstanceColl
 	
@@ -443,7 +451,7 @@ class Orchestrator(object):
 		
 		
 		for currInstance in instancesToStopList:
-			stopWorker = StopWorker(region, currInstance) 
+			stopWorker = StopWorker(region, currInstance, self.dryRunFlag) 
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
 				self.workloadSpecificationDict[Orchestrator.SSM_S3_BUCKET_NAME], 
@@ -483,7 +491,7 @@ class Orchestrator(object):
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
 			self.logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(region, currInstance)
+			startWorker = StartWorker(region, currInstance, self.dryRunFlag)
 			startWorker.execute()
 
 		# Delay to be introduced prior to allowing the next tier to be actioned.
@@ -537,26 +545,34 @@ if __name__ == "__main__":
 	# python Orchestrator.py -i workloadIdentier -r us-west-2
 
 	parser = argparse.ArgumentParser(description='Command line parser')
-	parser.add_argument('-i','--workloadIdentifier', help='Workload Identifier to Action Upon',required=True)
+	parser.add_argument('-w','--workloadIdentifier', help='Workload Identifier to Action Upon',required=True)
 	parser.add_argument('-r','--workloadRegion', help='Region where the Workload is running', required=True)
-	parser.add_argument('-a','--action', help='Action to Orchestrate (e.g. Stop or Start)', required=True)
-	#parser.add_argument('-t','--testcases', nargs='?', help='Run the test cases', required=False)
-	parser.add_argument('-t','--testcases', help='Run the test cases', required=False)
+	parser.add_argument('-a','--action', choices=['Stop', 'Start'], help='Action to Orchestrate (e.g. Stop or Start)', required=False)
+	parser.add_argument('-t','--testcases', action='count', help='Run the test cases', required=False)
+	parser.add_argument('-d','--dryrun', action='count', help='Run but take no Action', required=False)
+	
 	args = parser.parse_args()
 
-	orchMain = Orchestrator(args.workloadIdentifier, args.workloadRegion)
-	if( args.testcases ):
+	# Set the Dryrun Flag
+	if( args.dryrun > 0 ):
+		orchMain = Orchestrator(args.workloadIdentifier, args.workloadRegion, True)
+	else:
+		orchMain = Orchestrator(args.workloadIdentifier, args.workloadRegion)
+
+	# If testcases set, run them, otherwise run the supplied Action only
+	if( args.testcases > 0 ):	
 		orchMain.runTestCases()
 	else:
-		action = args.action
-		validActions = [Orchestrator.ACTION_STOP, Orchestrator.ACTION_START]
-		if( action in validActions ):
-			orchMain.logger.info('\n### Orchestrating %s' % action +' Action ###')
-			orchMain.initializeState()
-			orchMain.orchestrate(action)
+
+		# Default Action to Start
+		if( args.action ):
+			action = args.action
 		else:
-			orchMain.logger.warning('Action specified %s is not a valid Action per the validActions list %s' % (action, str(validActions)))
-			exit(2)
+			action = Orchestrator.ACTION_START
+
+		orchMain.logger.info('\n### Orchestrating %s' % action +' Action ###')
+		orchMain.initializeState()
+		orchMain.orchestrate(action)
 
 	
 

@@ -5,11 +5,12 @@ from distutils.util import strtobool
 from SSMDelegate import SSMDelegate
 
 class Worker(object):
-	def __init__(self, region, instance):
+	def __init__(self, region, instance, dryRunFlag):
 
 		self.region=region
 		self.ec2Resource = boto3.resource('ec2', region_name=self.region)
 		self.instance=instance
+		self.dryRunFlag=dryRunFlag
 
 		self.instanceStateMap = {
 			"pending" : 0, 
@@ -42,12 +43,18 @@ class Worker(object):
 
 
 class StartWorker(Worker):
-	def __init__(self, region, instance):
-		super(StartWorker, self).__init__(region, instance)
+	def __init__(self, region, instance, dryRunFlag):
+		super(StartWorker, self).__init__(region, instance, dryRunFlag)
 	
 	def startInstance(self):
-		#EC2.Instance.start()
-		result=self.instance.start()
+
+		result=''
+		if( self.dryRunFlag ):
+			self.logger.warning('DryRun Flag is set - instance will not be started')
+		else:
+			#EC2.Instance.start()
+			result=self.instance.start()
+		
 		self.logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 
 	def execute(self):
@@ -58,8 +65,8 @@ class StartWorker(Worker):
 
 
 class StopWorker(Worker):
-	def __init__(self, region, instance):
-		super(StopWorker, self).__init__(region, instance)
+	def __init__(self, region, instance, dryRunFlag):
+		super(StopWorker, self).__init__(region, instance, dryRunFlag)
 		
 		# MUST convert string False to boolean False
 		self.waitFlag=strtobool('False')
@@ -69,9 +76,13 @@ class StopWorker(Worker):
 	def stopInstance(self):
 
 		self.logger.debug('Worker::stopInstance() called')
+		result=''
 		
-		#EC2.Instance.stop()
-		result=self.instance.stop()
+		if( self.dryRunFlag ):
+			self.logger.warning('DryRun Flag is set - instance will not be stopped')
+		else:
+			#EC2.Instance.stop()
+			result=self.instance.stop()
 
 		# If configured, wait for the stop to complete prior to returning
 		self.logger.info('The bool value of self.waitFlag %s, is %s' % (self.waitFlag, bool(self.waitFlag)))
@@ -80,13 +91,16 @@ class StopWorker(Worker):
 		# self.waitFlag has been converted from str to boolean via set method
 		if( self.waitFlag ):
 			self.logger.info(self.instance.id + ' :Waiting for Stop to complete...')
-			
-			# Need the Client to get the Waiter
-			ec2Client=self.ec2Resource.meta.client
-			waiter=ec2Client.get_waiter('instance_stopped')	
 
-			# Waits for 40 15 second increments (e.g. up to 10 minutes)
-			waiter.wait( )
+			if( self.dryRunFlag ):			
+				self.logger.warning('DryRun Flag is set - waiter() will not be employed')
+			else:
+				# Need the Client to get the Waiter
+				ec2Client=self.ec2Resource.meta.client
+				waiter=ec2Client.get_waiter('instance_stopped')	
+
+				# Waits for 40 15 second increments (e.g. up to 10 minutes)
+				waiter.wait( )
 
 		else:
 			self.logger.info(self.instance.id + ' No wait for Stop to complete requested')

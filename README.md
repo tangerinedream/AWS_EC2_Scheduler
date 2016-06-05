@@ -27,21 +27,23 @@ Do a once over on the documentation, then try it out.
   1. Enable Cron or Lambda with Scheduling Actions to launch the Orchestrator python script, which does the work.
     1. Ensure your IAM *instance roles* are established to make calls to DynamoDB, EC2, S3, and SSM (Need more detail here) *The below is DRAFT only*
       1. DynamoDB
-        1. dynamodb:CreateTable
+        1. dynamodb:CreateTable (not needed in instance role, but needed for setup)
         1. dynamodb:GetItem
-        1. dynamodb:PutItem
+        1. dynamodb:PutItem (not needed in instance role, but needed for setup)
         1. dynamodb:Query
-        1. dynamodb:DeleteItem
+        1. dynamodb:DeleteItem (not needed in instance role, but needed for setup)
       1. EC2
         1. ec2:StartInstances
         1. ec2:StopInstances
         1. ec2:DescribeTags
+        1. ec2:DescribeInstances
+        1. ec2:DescribeInstanceStatus
       1. S3
-        1. s3:CreateBucket
+        1. s3:CreateBucket (not needed in instance role, but needed for setup)
         1. s3:GetObject
         1. s3:ListBucket
-        1. s3:PutObject
-      1. SSM - See the SSM Section for details
+        1. s3:PutObject  (SSM will provide this permission)
+      1. SSM - See "Address the SSM Prerequisites" above for details
 
 
 
@@ -74,6 +76,8 @@ The workload specification contains tier independent configuration of the worklo
 <dt>TierFilterTagName</dt>
 <dd>: The name of the tag *key* on the instance used to identify the Tier.</dd>
 
+<dt>VPC_ID</dt>
+<dd>: Optional, but recommended, parameter to limit the scope of the query for instance matching. </dd>
 </dl>
 
 #### JSON: WorkloadSpecification 
@@ -85,7 +89,8 @@ The workload specification contains tier independent configuration of the worklo
   "SpecName": "BotoTestCase1",
   "SSMS3BucketName": "myBucketName",
   "SSMS3KeyPrefixName": "ssmRemoteComandResults",
-  "TierFilterTagName": "Role"
+  "TierFilterTagName": "Role",
+  "VPC_ID": "vpc-xyz"
 }
 ```
 
@@ -132,6 +137,7 @@ Valid values are "Linux", or "Windows"</dd>
 
 <dt>TierTagValue</dt>
 <dd>: The name of the Tag *Value* that will be used as a search target for instances for this particular tier.  The Tag *Key* is specified in the WorkloadSpec.</dd>
+
 
 </dl>
 
