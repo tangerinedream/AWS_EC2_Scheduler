@@ -27,9 +27,9 @@ Do a once over on the documentation, then try it out.
     1. For the instances being managed, setup the IAM Role per the following instructions.
       1. [Ensure your IAM *instance roles* are enabled for the SSM agent.  Use AmazonEC2RoleforSSM (instance trust policy) and please ensure you understand how SSM works prior to use.](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html, "SSM Instance Role Permissions").  For a full set of SSM Prerequsites, look [Here](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/remote-commands-prereq.html)
       1. [Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html "Installing SSM")
-    1. For the instance from which you will be running the AWS_Stop_Start product, you'll need the following Policy enabled for either the instance (if running within AWS), or attached to an IAM user if running outside of AWS.
+    1. For the instance from which you will be running the product, you'll need the following Policy enabled for either the instance (if running within AWS), or attached to an IAM user if running outside of AWS.
 
-### IAM Details: instance running the AWS_Stop_Start product
+### IAM Details: instance running the product
 ```json
 {
     "Version": "2012-10-17",
