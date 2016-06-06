@@ -15,8 +15,6 @@ Do a once over on the documentation, then try it out.
   1. Address the SSM Prerequisites
     1. Create an S3 bucket for the SSM processing
     1. Configure Lifecycle rules on your bucket for 1 day, you shouldn't need more
-    1. [Ensure your IAM *instance roles* are enabled for the SSM agent.  Use AmazonEC2RoleforSSM (instance trust policy) and please ensure you understand how SSM works prior to use.](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html, "SSM Instance Role Permissions").  For a full set of SSM Prerequsites, look [Here](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/remote-commands-prereq.html)
-    1. [Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html "Installing SSM")
   1. Create your DynamoDB tables
     1. Ensure correct table naming, and
     1. Ensure correct provisioned throughput
@@ -25,25 +23,74 @@ Do a once over on the documentation, then try it out.
     1. Ensure your workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Environment", Tag Value is "ENV001"), and that all instances to be orchestrated for that workload are tagged as such.
     1. Ensure each tier within the workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Role", Tag Value is "Web", or Tag Value is "DB", etc..)
   1. Enable Cron or Lambda with Scheduling Actions to launch the Orchestrator python script, which does the work.
-    1. Ensure your IAM *instance roles* are established to make calls to DynamoDB, EC2, S3, and SSM (Need more detail here) *The below is DRAFT only*
-      1. DynamoDB
-        1. dynamodb:CreateTable (not needed in instance role, but needed for setup)
-        1. dynamodb:GetItem
-        1. dynamodb:PutItem (not needed in instance role, but needed for setup)
-        1. dynamodb:Query
-        1. dynamodb:DeleteItem (not needed in instance role, but needed for setup)
-      1. EC2
-        1. ec2:StartInstances
-        1. ec2:StopInstances
-        1. ec2:DescribeTags
-        1. ec2:DescribeInstances
-        1. ec2:DescribeInstanceStatus
-      1. S3
-        1. s3:CreateBucket (not needed in instance role, but needed for setup)
-        1. s3:GetObject
-        1. s3:ListBucket
-        1. s3:PutObject  (SSM will provide this permission)
-      1. SSM - See "Address the SSM Prerequisites" above for details
+  1. Ensure IAM Roles and Policies are setup.  You will need an IAM Role for each instance running SSM (if you already have a role, you may simply add the below policy to it).  You will also want an IAM Role for the instance which will actually run the Orchestration script.
+    1. For the instances being managed, setup the IAM Role per the following instructions.
+      1. [Ensure your IAM *instance roles* are enabled for the SSM agent.  Use AmazonEC2RoleforSSM (instance trust policy) and please ensure you understand how SSM works prior to use.](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html, "SSM Instance Role Permissions").  For a full set of SSM Prerequsites, look [Here](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/remote-commands-prereq.html)
+      1. [Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html "Installing SSM")
+    1. For the instance from which you will be running the AWS_Stop_Start product, you'll need the following Policy enabled for either the instance (if running within AWS), or attached to an IAM user if running outside of AWS.
+
+### IAM Details: instance running the AWS_Stop_Start product
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Stmt1465181592000",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeInstances",
+                "ec2:DescribeTags",
+                "ec2:StartInstances",
+                "ec2:StopInstances"
+            ],
+            "Resource": [
+                "*"
+            ]
+        },
+        {
+            "Sid": "Stmt1465181721000",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::<your-bucket-name-here>/*"
+            ]
+        },
+        {
+            "Sid": "Stmt1465182118000",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:Query"
+            ],
+            "Resource": [
+                "arn:aws:dynamodb:<region-of-your-dynamodb-tables>:<your-account-number here>:table/WorkloadSpecification",
+                "arn:aws:dynamodb:<region-of-your-dynamodb-tables>:<your-account-number here>:table/TierSpecification"
+            ]
+        },
+        {
+            "Sid": "Stmt1465183822000",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:SendCommand",
+                "ssm:ListDocuments",
+                "ssm:DescribeDocument",
+                "ssm:GetDocument",
+                "ssm:DescribeInstanceInformation",
+                "ssm:CancelCommand",
+                "ssm:ListCommands",
+                "ssm:ListCommandInvocations"
+            ],
+            "Resource": [
+                "*"
+            ]
+        }
+    ]
+}
+``` 
 
 
 
