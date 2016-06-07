@@ -237,7 +237,8 @@ SSM will always check for the file, which may introduce some latency in terms of
 Below are the usage flags for the Orchestrator, which is all you need to launch the product:
 
 ### Command Line Options
-```$ python Orchestrator.py -h
+```
+$ python Orchestrator.py -h
 usage: Orchestrator.py [-h] -w WORKLOADIDENTIFIER -r WORKLOADREGION
                        [-a {Stop,Start}] [-t] [-d]
 
@@ -252,7 +253,8 @@ optional arguments:
   -a {Stop,Start}, --action {Stop,Start}
                         Action to Orchestrate (e.g. Stop or Start)
   -t, --testcases       Run the test cases
-  -d, --dryrun          Run but take no Action```
+  -d, --dryrun          Run but take no Action
+```
 
 ### Stop all of the instances
 `$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Stop`
