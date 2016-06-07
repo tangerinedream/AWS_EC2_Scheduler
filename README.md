@@ -19,10 +19,12 @@ Do a once over on the documentation, then try it out.
     1. Ensure correct table naming, and
     1. Ensure correct provisioned throughput
     1. Create a single row for the workload, and one or more rows for each tier.  Details are below.
-  1. Address Tag Requirements
-    1. Ensure your workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Environment", Tag Value is "ENV001"), and that all instances to be orchestrated for that workload are tagged as such.
+  1. Address Tag Requirements on instances
+    1. Ensure your workload has a Tag Key and **unique** Tag Value (e.g. Tag Key Name is "Environment", Tag Value is "ENV001"), and that all instances to be orchestrated for that workload are tagged as such.
     1. Ensure each tier within the workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Role", Tag Value is "Web", or Tag Value is "DB", etc..)
   1. Enable Cron or Lambda with Scheduling Actions to launch the Orchestrator python script, which does the work.
+    1. If running the product from an instance, ensure both python 2.7.x and boto3 are installed.
+    1. If running from Lambda, python and boto3 are preinstalled. 
   1. Ensure IAM Roles and Policies are setup.  You will need an IAM Role for each instance running SSM (if you already have a role, you may simply add the below policy to it).  You will also want an IAM Role for the instance which will actually run the Orchestration script.
     1. For the instances being managed, setup the IAM Role per the following instructions.
       1. [Ensure your IAM *instance roles* are enabled for the SSM agent.  Use AmazonEC2RoleforSSM (instance trust policy) and please ensure you understand how SSM works prior to use.](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html, "SSM Instance Role Permissions").  For a full set of SSM Prerequsites, look [Here](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/remote-commands-prereq.html)
@@ -225,3 +227,42 @@ Or, for Windows guest OS ...
 ```
 
 ## The Override Capability
+Since the product uses SSM, it will always check for the existence of an "override file" on the instance itself.  When present, the product will **not** stop the instance but rather bypass it.  This will be logged in the Orchestrator.log file.
+
+You specify the location of the Override File, as well as the Operating System.  SSM will simply check whether the file exists in the location you configure.  If the file exists, the instance will be bypassed.
+
+SSM will always check for the file, which may introduce some latency in terms of how quickly the instance is attempted for Stop Action.
+
+## Usage
+Below are the usage flags for the Orchestrator, which is all you need to launch the product:
+
+### Command Line Options
+`$ python Orchestrator.py -h
+usage: Orchestrator.py [-h] -w WORKLOADIDENTIFIER -r WORKLOADREGION
+                       [-a {Stop,Start}] [-t] [-d]
+
+Command line parser
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -w WORKLOADIDENTIFIER, --workloadIdentifier WORKLOADIDENTIFIER
+                        Workload Identifier to Action Upon
+  -r WORKLOADREGION, --workloadRegion WORKLOADREGION
+                        Region where the Workload is running
+  -a {Stop,Start}, --action {Stop,Start}
+                        Action to Orchestrate (e.g. Stop or Start)
+  -t, --testcases       Run the test cases
+  -d, --dryrun          Run but take no Action`
+
+### Stop all of the instances
+`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Stop`
+
+### Start all of the instances
+`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Start`
+
+### Execute a Dry Run, for Stopping all of the instances
+`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Stop -d`
+No **Action** will be taken. For example, here, the Stop will not execute.
+
+### Run the Test Suite - Starts and Stops instances with 90 second delay inbetween
+$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -t
