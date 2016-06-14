@@ -162,7 +162,7 @@ class Orchestrator(object):
 			for attributeName in resultItem:
 				#print "AttributeName: ", attributeName
 				attributeValue=resultItem[attributeName].values()[0]
-				self.logger.info('Directive Attribute [%s maps to %s]' % (attributeName, attributeValue))
+				self.logger.info('Workload Attribute [%s maps to %s]' % (attributeName, attributeValue))
 				#print "AttributeValue: ", attributeValue + '\n'
 
 				self.workloadSpecificationDict[attributeName]=attributeValue
@@ -512,7 +512,7 @@ class Orchestrator(object):
 	def initLogging(self):
 		# Setup the Logger
 		self.logger = logging.getLogger("Orchestrator")  #The Module Name
-		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s\n', filename="Orchestrator" + '.log', filemode='w', level=logging.INFO)
+		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s\n', filename='Orchestrator_' + self.partitionTargetValue + '.log', filemode='a', level=logging.INFO)
 		
 		# Setup the Handlers
 		# create console handler and set level to debug
