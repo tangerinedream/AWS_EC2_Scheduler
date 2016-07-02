@@ -124,6 +124,8 @@ class SSMDelegate(object):
 			self.logger.info('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
 
 		except Exception as e:
+			self.logger.error('ssm send exception: ')
+			self.logger.error(e)
 			response=''
 
 		return( response )

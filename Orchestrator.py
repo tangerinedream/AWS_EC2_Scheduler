@@ -215,7 +215,8 @@ class Orchestrator(object):
 		# Using the Tier Spec Dictionary, construct a simple List to order the sequence of Tier Processing
 		# for the given Action.  Sequence is ascending.
 		#
-		self.sequencedTiersList=[]
+		# Prefill list for easy insertion
+		self.sequencedTiersList=range( len(self.tierSpecDict) )
 
 		# tierAction indicates whether it is a TIER_STOP, or TIER_START, as they may have different sequences
 		for currKey, currAttributes in self.tierSpecDict.iteritems():
@@ -237,9 +238,8 @@ class Orchestrator(object):
 			#self.logger.info('In sequenceTiers(): tierAttributes is ', tierAttributes )
 
 
-			# Insert into the List at the index specified as the sequence number in the Dict 
-			#should this be currAtttributes instead?
-			self.sequencedTiersList.insert( int(tierAttributes[Orchestrator.TIER_SEQ_NBR]) , tierName)
+			# Insert into the List 
+			self.sequencedTiersList[ int( tierAttributes[Orchestrator.TIER_SEQ_NBR ] ) ] = tierName
 
 		self.logger.debug('Sequence List for Action %s is %s' % (tierAction, self.sequencedTiersList))
 			
@@ -464,8 +464,6 @@ class Orchestrator(object):
 		# It may make sense to allow some amount of time for the instances to Stop, prior to Orchestration continuing.
 		time.sleep(self.getInterTierOrchestrationDelay(tierName, Orchestrator.TIER_STOP))
 
-		self.logger.info('stopATier() completed for tier %s' % tierName)
-
 	def startATier(self, tierName):
 		'''
 		Given a Tier,
@@ -512,7 +510,10 @@ class Orchestrator(object):
 	def initLogging(self):
 		# Setup the Logger
 		self.logger = logging.getLogger("Orchestrator")  #The Module Name
-		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s\n', filename='Orchestrator_' + self.partitionTargetValue + '.log', filemode='a', level=logging.INFO)
+		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s\n', 
+			filename='Orchestrator_' + self.partitionTargetValue + '.log', 
+			filemode='w', 
+			level=logging.DEBUG)
 		
 		# Setup the Handlers
 		# create console handler and set level to debug
@@ -533,7 +534,7 @@ class Orchestrator(object):
 		self.orchestrate(Orchestrator.ACTION_START )
 
 		# Test Case: Start an Environment
-		sleepSecs=90
+		sleepSecs=45
 		self.logger.info('\n### Sleeping for ' + str(sleepSecs) + ' seconds ###')
 		time.sleep(sleepSecs)
 
