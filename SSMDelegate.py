@@ -5,6 +5,8 @@ import json
 import time
 from distutils.util import strtobool
 
+__author__ = "Gary Silverman"
+
 class SSMDelegate(object):
 	### 
 	# 
@@ -124,8 +126,7 @@ class SSMDelegate(object):
 			self.logger.info('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
 
 		except Exception as e:
-			self.logger.error('ssm send exception: ')
-			self.logger.error(e)
+			self.logger.error('sendSSMCommand()' + e.response['Error']['Message'])
 			response=''
 
 		return( response )

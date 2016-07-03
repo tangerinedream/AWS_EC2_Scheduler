@@ -4,6 +4,8 @@ import logging
 from distutils.util import strtobool
 from SSMDelegate import SSMDelegate
 
+__author__ = "Gary Silverman"
+
 class Worker(object):
 	def __init__(self, region, instance, dryRunFlag):
 

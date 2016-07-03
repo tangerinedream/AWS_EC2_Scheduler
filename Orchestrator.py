@@ -51,7 +51,10 @@ class Orchestrator(object):
 	ACTION_SCALE_UP='ScaleUp'
 	ACTION_SCALE_DOWN='ScaleDown'
 
-	def __init__(self, partitionTargetValue, region='us-west-2', dryRun=False):
+	LOG_LEVEL_INFO='info'
+	LOG_LEVEL_DEBUG='debug'
+
+	def __init__(self, partitionTargetValue, loglevel, region='us-west-2', dryRun=False):
 		# default to us-west-2
 		self.region=region 
 
@@ -132,7 +135,7 @@ class Orchestrator(object):
 			80: "stopped"
 		}
 
-		self.initLogging()
+		self.initLogging(loglevel)
 
 	def initializeState(self):
 
@@ -154,7 +157,7 @@ class Orchestrator(object):
 				ReturnConsumedCapacity="TOTAL",
 			)
 		except ClientError as e:
-			self.logger.warning('In lookupWorkloadSpecification()' + e.response['Error']['Message'])
+			self.logger.error('lookupWorkloadSpecification()' + e.response['Error']['Message'])
 		else:
 			# Get the item from the result
 			resultItem=dynamodbItem['Item']
@@ -167,7 +170,7 @@ class Orchestrator(object):
 
 				self.workloadSpecificationDict[attributeName]=attributeValue
 
-			self.logSpecDict('lookupWorkloadSpecification')
+			#self.logSpecDict('lookupWorkloadSpecification', self.workloadSpecificationDict, Orchestrator.LOG_LEVEL_INFO )
 			#
 			#self.processItemJSON(resultItem)
 			#
@@ -186,7 +189,7 @@ class Orchestrator(object):
 			)
 			#print dynamodbItem
 		except ClientError as e:
-			self.logger.warning(e.response['Error']['Message'])
+			self.logger.error('lookupTierSpecs()' + e.response['Error']['Message'])
 		else:
 			# Get the items from the result
 			resultItems=dynamodbItem['Items']
@@ -204,12 +207,13 @@ class Orchestrator(object):
 				}
 
 				self.logger.info('Tier %s:' % attribute[ Orchestrator.TIER_NAME ])
-				for key, value in attribute.iteritems():
-					self.logger.info('%s contains %s' % (key, value))
+				self.logSpecDict('lookupTierSpecs', attribute, Orchestrator.LOG_LEVEL_DEBUG )
+				# for key, value in attribute.iteritems():
+				# 	self.logger.info('%s contains %s' % (key, value))
 
 
 			# Log the constructed Tier Spec Dictionary
-			self.logSpecDict('lookupTierSpecs')
+			self.logSpecDict('lookupTierSpecs', self.tierSpecDict, Orchestrator.LOG_LEVEL_INFO )
 
 	def sequenceTiers(self, tierAction):
 		# Using the Tier Spec Dictionary, construct a simple List to order the sequence of Tier Processing
@@ -246,13 +250,14 @@ class Orchestrator(object):
 		return( self.sequencedTiersList )
 	
 
-	def printSpecDict(self, label):
-		for key, value in self.workloadSpecificationDict.iteritems():
-			print '%s (key==%s, value==%s)' % (label, key, value)
-
-	def logSpecDict(self, label):
-		for key, value in self.workloadSpecificationDict.iteritems():
-			self.logger.debug('%s (key==%s, value==%s)' % (label, key, value))
+	def logSpecDict(self, label, dict, level):
+		# for key, value in self.workloadSpecificationDict.iteritems():
+		# 	self.logger.debug('%s (key==%s, value==%s)' % (label, key, value))
+		for key, value in dict.iteritems():
+			if( level == Orchestrator.LOG_LEVEL_INFO ):
+				self.logger.info('%s (key==%s, value==%s)' % (label, key, value))
+			else:
+				self.logger.debug('%s (key==%s, value==%s)' % (label, key, value))
 
 	def isTierSynchronized(self, tierName, tierAction):
 		# Get the Tier Named tierName
@@ -269,14 +274,13 @@ class Orchestrator(object):
 			tierActionAttributes = tierAttributes[Orchestrator.TIER_START]
 			#print tierActionAttributes
 
-		#self.logger.info('isTierSynchronized() tierAction==%s, tierName==%s syncFlag==%s' % (tierAction, tierName, tierActionAttributes[Orchestrator.TIER_SYCHRONIZATION]))
 		# Return the value in the Dict for TierSynchronization
 		if Orchestrator.TIER_SYCHRONIZATION in tierActionAttributes:
 			res = tierActionAttributes[Orchestrator.TIER_SYCHRONIZATION]
 		else:
 			res = False
 
-		self.logger.info('isTierSynchronized for tierName==%s, tierAction==%s is syncFlag==%s' % (tierName, tierAction, res) )
+		self.logger.debug('isTierSynchronized for tierName==%s, tierAction==%s is syncFlag==%s' % (tierName, tierAction, res) )
 		return( res )
 
 	def getTierStopOverrideFilename(self, tierName):
@@ -339,8 +343,7 @@ class Orchestrator(object):
 	def lookupInstancesByFilter(self, targetInstanceStateKey, tierName):
 	    # Use the filter() method of the instances collection to retrieve
 	    # all running EC2 instances.
-		self.logger.info('In lookupInstancesByFilter() seeking instances in tier %s' % tierName)
-		#self.printSpecDict('lookupInstancesByFilter')
+		self.logger.debug('lookupInstancesByFilter() seeking instances in tier %s' % tierName)
 		self.logger.debug('lookupInstancesByFilter() instance state %s' % targetInstanceStateKey)
 		self.logger.debug('lookupInstancesByFilter() tier tag key %s' % self.workloadSpecificationDict[Orchestrator.TIER_FILTER_TAG_KEY])
 		self.logger.debug('lookupInstancesByFilter() tier tag value %s' % tierName)
@@ -370,15 +373,16 @@ class Orchestrator(object):
 		        'Values': [self.workloadSpecificationDict[Orchestrator.VPC_ID_KEY]]
 			}
 			targetFilter.append(vpc_filter_dict_element)
-			self.logger.info('VPC_ID provided, Filter List is %s' % str(targetFilter))
+			self.logger.debug('VPC_ID provided, Filter List is %s' % str(targetFilter))
 
 		# Filter the instances
 		# NOTE: Only instances within the specified region are returned
 		targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
-		for curr in targetInstanceColl:
-			self.logger.info('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
-		
+
 		self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
+		for curr in targetInstanceColl:
+			self.logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
+		
 
 		return targetInstanceColl
 	
@@ -421,7 +425,7 @@ class Orchestrator(object):
 		
 		else:
 		
-			self.logger.info('Action requested %s is not yet implemented. No action taken', action)	
+			self.logger.warning('Action requested %s is not yet implemented. No action taken', action)	
 			
 
 
@@ -443,12 +447,11 @@ class Orchestrator(object):
 			tierName
 		)
 
-
-		region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
+		# Determine if operations on the Tier should be synchronized or not
 		tierSynchronized=self.isTierSynchronized(tierName, Orchestrator.TIER_STOP)
 
-
-		
+		# Grab the region the worker should make API calls against
+		region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
 		
 		for currInstance in instancesToStopList:
 			stopWorker = StopWorker(region, currInstance, self.dryRunFlag) 
@@ -460,7 +463,7 @@ class Orchestrator(object):
 				self.getTierOperatingSystemType(tierName)
 			)
 
-		# Delay to be introduced prior to allowing the next tier to be actioned.
+		# Configured delay to be introduced prior to allowing the next tier to be Actioned.
 		# It may make sense to allow some amount of time for the instances to Stop, prior to Orchestration continuing.
 		time.sleep(self.getInterTierOrchestrationDelay(tierName, Orchestrator.TIER_STOP))
 
@@ -483,8 +486,12 @@ class Orchestrator(object):
 			tierName
 		)
 
+		# Determine if operations on the Tier should be synchronized or not, 
+		# currently this feature is not implemented for Starting A Tier
+		#syncFlag=self.isTierSynchronized(tierName, Orchestrator.TIER_START)
+
+		# Grab the region the worker should make API calls against
 		region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
-		syncFlag=self.isTierSynchronized(tierName, Orchestrator.TIER_START)
 
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
@@ -507,13 +514,28 @@ class Orchestrator(object):
 	def scaleInstance(self, direction):
 		pass
 
-	def initLogging(self):
+	def initLogging(self, loglevel):
 		# Setup the Logger
-		self.logger = logging.getLogger("Orchestrator")  #The Module Name
+		self.logger = logging.getLogger('Orchestrator')  #The Module Name
+
+		# Set logging level
+		if( loglevel == 'critical' ):
+			loggingLevelSelected=logging.CRITICAL
+		elif( loglevel == 'error' ):
+			loggingLevelSelected=logging.ERROR
+		elif( loglevel == 'warning' ):
+			loggingLevelSelected=logging.WARNING
+		elif( loglevel == 'info' ):
+			loggingLevelSelected=logging.INFO
+		elif( loglevel == 'debug' ):
+			loggingLevelSelected=logging.DEBUG
+		elif( loglevel == 'notset' ):
+			loggingLevelSelected=logging.NOTSET
+
 		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s\n', 
 			filename='Orchestrator_' + self.partitionTargetValue + '.log', 
 			filemode='w', 
-			level=logging.DEBUG)
+			level=loggingLevelSelected)
 		
 		# Setup the Handlers
 		# create console handler and set level to debug
@@ -551,14 +573,22 @@ if __name__ == "__main__":
 	parser.add_argument('-a','--action', choices=['Stop', 'Start'], help='Action to Orchestrate (e.g. Stop or Start)', required=False)
 	parser.add_argument('-t','--testcases', action='count', help='Run the test cases', required=False)
 	parser.add_argument('-d','--dryrun', action='count', help='Run but take no Action', required=False)
+	parser.add_argument('-l','--loglevel', choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to record log messages to the logfile', required=False)
 	
 	args = parser.parse_args()
 
-	# Set the Dryrun Flag
-	if( args.dryrun > 0 ):
-		orchMain = Orchestrator(args.workloadIdentifier, args.workloadRegion, True)
+	if( args.loglevel > 0 ):
+		loglevel = args.loglevel
 	else:
-		orchMain = Orchestrator(args.workloadIdentifier, args.workloadRegion)
+		loglevel = 'info'
+
+	if( args.dryrun > 0 ):
+		dryRun = True
+	else:
+		dryRun = False
+
+	# Launch the Orchestrator - the main component of the subsystem
+	orchMain = Orchestrator(args.workloadIdentifier, loglevel, args.workloadRegion, dryRun)
 
 	# If testcases set, run them, otherwise run the supplied Action only
 	if( args.testcases > 0 ):	
