@@ -3,6 +3,7 @@ import boto3
 import logging
 import json
 import time
+import string
 from distutils.util import strtobool
 
 __author__ = "Gary Silverman"
@@ -70,6 +71,9 @@ class SSMDelegate(object):
 		# The unique identifier of the ssm command
 		self.commandId = ''
 
+		# Copy of which OS type is being used
+		self.osType = SSMDelegate.OS_TYPE_LINUX
+
 		self.s3 = boto3.client('s3', self.region_name)
 
 		self.initLogging()
@@ -78,10 +82,11 @@ class SSMDelegate(object):
 
 	def sendSSMCommand(self, fileURI, osType):
 
-		# defaults to Linux
-		if( osType == SSMDelegate.OS_TYPE_WINDOWS ):
+		#Capture osType so we can lookup SSM results in S3 correctly
+		self.osType = osType
+		if( self.osType == SSMDelegate.OS_TYPE_WINDOWS ):
 			self.ssmDocumentName='AWS-RunPowerShellScript'
-			testOverrideFileCommand='@echo off & IF exist ' + fileURI + ' ( echo '+ self.SCRIPT_NO_ACTION +' ) ELSE ( echo '+ self.SCRIPT_STOP_INSTANCE +' )'
+			testOverrideFileCommand='IF ((test-path ' + fileURI + ') -eq $True) { echo '+ self.SCRIPT_NO_ACTION +' } ELSE { echo '+ self.SCRIPT_STOP_INSTANCE +' }'
 			defaultDir='C:'
 		else: #default to OS_TYPE_LINUX
 			self.ssmDocumentName='AWS-RunShellScript'
@@ -120,7 +125,7 @@ class SSMDelegate(object):
 				self.logger.debug('(key==%s, value==%s)' % (key, value))
 
 			self.logger.info('SSMDelegate send_command() results :')	
-			self.logger.info('Operating System: ' + osType)
+			self.logger.info('Operating System: ' + self.osType)
 			self.logger.info('Command attempted: ' + testOverrideFileCommand)	
 			self.logger.info('CommandId:  ' + self.getAttributeFromSSMSendCommand(response, 'CommandId'))
 			self.logger.info('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
@@ -195,8 +200,8 @@ class SSMDelegate(object):
 					if( res == 'Success' ):
 
 						# Ok, let's go look it up in S3
-						# Since the echo in the script adds a newline, chomp it off
-						scriptRes=self.lookupS3Result().rstrip('\n')
+						# Due to cross platform treatment of text files, chomp everything that isn't alphanumeric
+						scriptRes = filter(str.isalnum, self.lookupS3Result())
 
 						# If the string says Continue, then it's a go.  Otherwise, we won't stop it. 
 						if( scriptRes == self.SCRIPT_STOP_INSTANCE ):
@@ -226,14 +231,23 @@ class SSMDelegate(object):
 		# bucketName/keyPrefixName+region/commandId/instance-id/awsrunShellScript/0.aws:runShellScript
 		delimiter='/'
 		
-		# Note: Do not prefix 'key' with leading slash
-		key= \
-			self.S3KeyPrefixName \
-			+delimiter+self.commandId \
-			+delimiter+self.instanceId \
-			+delimiter+'awsrunShellScript' \
-			+delimiter+'0.aws:runShellScript' \
-			+delimiter+'stdout'
+		if( self.osType == SSMDelegate.OS_TYPE_WINDOWS ):
+			# Note: Do not prefix 'key' with leading slash
+			key= \
+				self.S3KeyPrefixName \
+				+delimiter+self.commandId \
+				+delimiter+self.instanceId \
+				+delimiter+'awsrunPowerShellScript' \
+				+delimiter+'stdout.txt'
+		else:
+			# Note: Do not prefix 'key' with leading slash
+			key= \
+				self.S3KeyPrefixName \
+				+delimiter+self.commandId \
+				+delimiter+self.instanceId \
+				+delimiter+'awsrunShellScript' \
+				+delimiter+'0.aws:runShellScript' \
+				+delimiter+'stdout'
 
 		return(key)
 
