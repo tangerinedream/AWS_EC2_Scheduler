@@ -137,10 +137,10 @@ class StopWorker(Worker):
 
 
 		# Create the delegate
-		ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, self.region)
+		ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, overrideFileName, osType, self.region)
 
 		# Send request via SSM, and check if send was successful
-		ssmSendResult=ssmDelegate.sendSSMCommand(overrideFileName, osType)
+		ssmSendResult=ssmDelegate.sendSSMCommand()
 		if( ssmSendResult ):
 			# Have delegate advise if override file was set on instance.  If so, the instance is not to be stopped.
 			overrideRes=ssmDelegate.retrieveSSMResults(ssmSendResult)

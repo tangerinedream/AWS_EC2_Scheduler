@@ -46,7 +46,7 @@ class SSMDelegate(object):
 	SSM_COMMAND_ID = 'CommandId'
 	
 
-	def __init__(self, instanceId, bucketName, keyPrefixName, region_name='us-west-2'):
+	def __init__(self, instanceId, bucketName, keyPrefixName, fileURI, osType, region_name='us-west-2'):
 
 		self.instanceId=instanceId
 
@@ -71,8 +71,11 @@ class SSMDelegate(object):
 		# The unique identifier of the ssm command
 		self.commandId = ''
 
+		# The name of the Override File to test for existence
+		self.fileURI = fileURI
+
 		# Copy of which OS type is being used
-		self.osType = SSMDelegate.OS_TYPE_LINUX
+		self.osType = osType
 
 		self.s3 = boto3.client('s3', self.region_name)
 
@@ -80,17 +83,16 @@ class SSMDelegate(object):
 		
 
 
-	def sendSSMCommand(self, fileURI, osType):
+	def sendSSMCommand(self):
 
 		#Capture osType so we can lookup SSM results in S3 correctly
-		self.osType = osType
 		if( self.osType == SSMDelegate.OS_TYPE_WINDOWS ):
 			self.ssmDocumentName='AWS-RunPowerShellScript'
-			testOverrideFileCommand='IF ((test-path ' + fileURI + ') -eq $True) { echo '+ self.SCRIPT_NO_ACTION +' } ELSE { echo '+ self.SCRIPT_STOP_INSTANCE +' }'
+			testOverrideFileCommand='IF ((test-path ' + self.fileURI + ') -eq $True) { echo '+ self.SCRIPT_NO_ACTION +' } ELSE { echo '+ self.SCRIPT_STOP_INSTANCE +' }'
 			defaultDir='C:'
 		else: #default to OS_TYPE_LINUX
 			self.ssmDocumentName='AWS-RunShellScript'
-			testOverrideFileCommand='if [ -e ' + fileURI + ' ]; then echo \"'+ self.SCRIPT_NO_ACTION +'\"; else echo \"'+ self.SCRIPT_STOP_INSTANCE +'\"; fi'		
+			testOverrideFileCommand='if [ -e ' + self.fileURI + ' ]; then echo \"'+ self.SCRIPT_NO_ACTION +'\"; else echo \"'+ self.SCRIPT_STOP_INSTANCE +'\"; fi'		
 			defaultDir='/tmp'
 
 		try:
@@ -122,13 +124,13 @@ class SSMDelegate(object):
 
 			# Output
 			for key, value in response.iteritems():
-				self.logger.debug('(key==%s, value==%s)' % (key, value))
+				self.logger.debug('ssm send_command response (key==%s, value==%s)' % (key, value))
 
-			self.logger.info('SSMDelegate send_command() results :')	
-			self.logger.info('Operating System: ' + self.osType)
-			self.logger.info('Command attempted: ' + testOverrideFileCommand)	
-			self.logger.info('CommandId:  ' + self.getAttributeFromSSMSendCommand(response, 'CommandId'))
-			self.logger.info('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
+			self.logger.debug('SSMDelegate send_command() results :')	
+			self.logger.debug('Operating System: ' + self.osType)
+			self.logger.debug('Command attempted: ' + testOverrideFileCommand)	
+			self.logger.debug('CommandId:  ' + self.getAttributeFromSSMSendCommand(response, 'CommandId'))
+			self.logger.debug('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
 
 		except Exception as e:
 			self.logger.error('sendSSMCommand()' + e.response['Error']['Message'])
@@ -143,30 +145,7 @@ class SSMDelegate(object):
 	# Retrieve the result by looking within the S3 bucket
 	###
 	def retrieveSSMResults(self, ssmResponse):
-		#
-		# Result will look like this
-		#
-		# SSMDelegate==>(key==Command, value=={
-		# 	u'Comment': u'Send command to test if override file exists on instance', 
-		# 	u'Status': u'Pending', 
-		# 	u'Parameters': {
-		# 		u'commands': [u'if [ -e /etc/override ]; then echo "Bypass"; else echo "Stop"; fi'], u'workingDirectory': [u'/tmp']
-		# 	},
-		# 	u'ExpiresAfter': datetime.datetime(2016, 5, 18, 23, 9, 32, 227000, tzinfo=tzlocal()), 
-		# 	u'DocumentName': u'AWS-RunShellScript', 
-		# 	u'OutputS3BucketName': u'com.gman.ssm', 
-		# 	u'OutputS3KeyPrefix': u'ssmRemoteComandResultsus-west-2', 
-		# 	u'RequestedDateTime': datetime.datetime(2016, 5, 18, 23, 6, 32, 227000, tzinfo=tzlocal()), 
-		# 	u'CommandId': u'5a7ab448-a296-44f6-b24a-379f9b669cd9', 
-		# 	u'InstanceIds': [u'i-074e5f7e93fdaaa50']
-		# 	}
-		# )
-		# SSMDelegate==>(key==ResponseMetadata, value=={
-		# 	'HTTPStatusCode': 200, 
-		# 	'RequestId': '11fd85e4-1d77-11e6-b1fd-69d231a5ab1b'
-		# 	}
-		# )
-		#
+
 		result = self.DECISION_NO_ACTION  # By default, we will not shut down the instance
 		
 		self.commandId = self.getAttributeFromSSMSendCommand(ssmResponse, SSMDelegate.SSM_COMMAND_ID)

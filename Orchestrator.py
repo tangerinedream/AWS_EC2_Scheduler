@@ -206,7 +206,7 @@ class Orchestrator(object):
 					Orchestrator.TIER_START : attribute[ Orchestrator.TIER_START ]
 				}
 
-				self.logger.info('Tier %s:' % attribute[ Orchestrator.TIER_NAME ])
+				#self.logger.info('Tier %s:' % attribute[ Orchestrator.TIER_NAME ])
 				self.logSpecDict('lookupTierSpecs', attribute, Orchestrator.LOG_LEVEL_DEBUG )
 				# for key, value in attribute.iteritems():
 				# 	self.logger.info('%s contains %s' % (key, value))
