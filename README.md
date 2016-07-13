@@ -260,8 +260,9 @@ Below are the usage flags for the Orchestrator, which is all you need to launch 
 ### Command Line Options
 ```
 $ python Orchestrator.py -h
-usage: Orchestrator.py [-h] -w WORKLOADIDENTIFIER -r WORKLOADREGION
+usage: Orchestrator.py [-h] -w WORKLOADIDENTIFIER -r DYNAMODBREGION
                        [-a {Stop,Start}] [-t] [-d]
+                       [-l {critical,error,warning,info,debug,notset}]
 
 Command line parser
 
@@ -269,12 +270,16 @@ optional arguments:
   -h, --help            show this help message and exit
   -w WORKLOADIDENTIFIER, --workloadIdentifier WORKLOADIDENTIFIER
                         Workload Identifier to Action Upon
-  -r WORKLOADREGION, --workloadRegion WORKLOADREGION
-                        Region where the Workload is running
+  -r DYNAMODBREGION, --dynamoDBRegion DYNAMODBREGION
+                        Region where the DynamoDB configuration exists. Note:
+                        could be different from the target EC2 workload is
+                        running
   -a {Stop,Start}, --action {Stop,Start}
                         Action to Orchestrate (e.g. Stop or Start)
   -t, --testcases       Run the test cases
   -d, --dryrun          Run but take no Action
+  -l {critical,error,warning,info,debug,notset}, --loglevel {critical,error,warning,info,debug,notset}
+                        The level to record log messages to the logfile
 ```
 
 ### Stop all of the instances
