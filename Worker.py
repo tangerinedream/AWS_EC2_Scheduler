@@ -7,10 +7,10 @@ from SSMDelegate import SSMDelegate
 __author__ = "Gary Silverman"
 
 class Worker(object):
-	def __init__(self, region, instance, dryRunFlag):
+	def __init__(self, workloadRegion, instance, dryRunFlag):
 
-		self.region=region
-		self.ec2Resource = boto3.resource('ec2', region_name=self.region)
+		self.workloadRegion=workloadRegion
+		self.ec2Resource = boto3.resource('ec2', region_name=self.workloadRegion)
 		self.instance=instance
 		self.dryRunFlag=dryRunFlag
 
@@ -45,9 +45,11 @@ class Worker(object):
 
 
 class StartWorker(Worker):
-	def __init__(self, region, instance, dryRunFlag):
-		super(StartWorker, self).__init__(region, instance, dryRunFlag)
-	
+	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag):
+		super(StartWorker, self).__init__(workloadRegion, instance, dryRunFlag)
+
+		self.ddbRegion=ddbRegion
+
 	def startInstance(self):
 
 		result=''
@@ -67,9 +69,11 @@ class StartWorker(Worker):
 
 
 class StopWorker(Worker):
-	def __init__(self, region, instance, dryRunFlag):
-		super(StopWorker, self).__init__(region, instance, dryRunFlag)
+	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag):
+		super(StopWorker, self).__init__(workloadRegion, instance, dryRunFlag)
 		
+		self.ddbRegion=ddbRegion
+
 		# MUST convert string False to boolean False
 		self.waitFlag=strtobool('False')
 		self.overrideFlag=strtobool('False')
@@ -87,7 +91,7 @@ class StopWorker(Worker):
 			result=self.instance.stop()
 
 		# If configured, wait for the stop to complete prior to returning
-		self.logger.info('The bool value of self.waitFlag %s, is %s' % (self.waitFlag, bool(self.waitFlag)))
+		self.logger.debug('The bool value of self.waitFlag %s, is %s' % (self.waitFlag, bool(self.waitFlag)))
 
 		
 		# self.waitFlag has been converted from str to boolean via set method
@@ -105,9 +109,7 @@ class StopWorker(Worker):
 				waiter.wait( )
 
 		else:
-			self.logger.info(self.instance.id + ' No wait for Stop to complete requested')
-
-		self.logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
+			self.logger.info(self.instance.id + ' Wait for Stop to complete was not requested')
 		
 	def setWaitFlag(self, flag):
 
@@ -124,6 +126,7 @@ class StopWorker(Worker):
 		Returning 'False' means the instance will be stopped (e.g. not overridden)
 		'''
 
+
 		# If there is no overrideFilename specified, we need to return False.  This is required because the
 		# remote evaluation script may evaluate to "Bypass" with a null string for the override file.  Keep in 
 		# mind, DynamodDB isn't going to enforce an override filename be set in the directive.
@@ -137,28 +140,43 @@ class StopWorker(Worker):
 
 
 		# Create the delegate
-		ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, overrideFileName, osType, self.region)
+		ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, overrideFileName, osType, self.ddbRegion, self.workloadRegion)
 
-		# Send request via SSM, and check if send was successful
-		ssmSendResult=ssmDelegate.sendSSMCommand()
-		if( ssmSendResult ):
-			# Have delegate advise if override file was set on instance.  If so, the instance is not to be stopped.
-			overrideRes=ssmDelegate.retrieveSSMResults(ssmSendResult)
-			self.logger.info('SSMDelegate runTestCases() results :' + overrideRes)
 
-			if( overrideRes == SSMDelegate.DECISION_STOP_INSTANCE ):
-				# There is a result and it specifies it is ok to Stop
-				self.overrideFlag=False
-				self.logger.info(self.instance.id + ' Instance will be stopped')
+		# Very first thing to check is whether SSM is going to write the output to the S3 bucket.  
+		#   If the bucket is not in the same region as where the instances are running, then SSM doesn't write
+		#   the result to the bucket and thus the rest of this method is completely meaningless to run.
+
+		if( ssmDelegate.isS3BucketInWorkloadRegion() == SSMDelegate.S3_BUCKET_IN_CORRECT_REGION ):
+
+			# Send request via SSM, and check if send was successful
+			ssmSendResult=ssmDelegate.sendSSMCommand()
+			if( ssmSendResult ):
+				# Have delegate advise if override file was set on instance.  If so, the instance is not to be stopped.
+				overrideRes=ssmDelegate.retrieveSSMResults(ssmSendResult)
+				self.logger.debug('SSMDelegate retrieveSSMResults() results :' + overrideRes)
+
+				if( overrideRes == SSMDelegate.S3_BUCKET_IN_WRONG_REGION ):
+					# Per SSM, the bucket must be in the same region as the target instance, otherwise the results will not be writte to S3 and cannot be obtained.
+					self.overrideFlag=True
+					self.logger.info(self.instance.id + ' Instance will be not be stopped because the S3 bucket is not in the same region as the workload')
+
+				elif( overrideRes == SSMDelegate.DECISION_STOP_INSTANCE ):
+					# There is a result and it specifies it is ok to Stop
+					self.overrideFlag=False
+					self.logger.info(self.instance.id + ' Instance will be stopped')
+				else:
+					# Every other result means the instance will be bypassed (e.g. not stopped)
+					self.overrideFlag=True
+					self.logger.info(self.instance.id + ' Instance will be not be stopped because override file was set')
 			else:
-				# Every other result means the instance will be bypassed (e.g. not stopped)
 				self.overrideFlag=True
-				self.logger.info(self.instance.id + ' Instance will be not be stopped because override file was set')
+				self.logger.info(self.instance.id + ' Instance will be not be stopped because SSM could not query it')
+
 		else:
+			self.logger.warning('SSM will not be executed as S3 bucket is not in the same region as the workload. [' + self.instance.id + '] Instance will be not be stopped')
 			self.overrideFlag=True
-			self.logger.info(self.instance.id + ' Instance will be not be stopped because SSM could not query it')
-
-
+		
 		return( self.overrideFlag )
 
 	def setOverrideFlagSet(self, overrideFlag):
@@ -177,8 +195,8 @@ class StopWorker(Worker):
 			self.stopInstance()
 
 class ScalingWorker(Worker):
-	def __init__(self, region, instance, newInstanceType):
-		super(ScalingWorker, self).__init__(region, instance)
+	def __init__(self, workloadRegion, instance, newInstanceType):
+		super(ScalingWorker, self).__init__(workloadRegion, instance)
 		self.newInstanceType=newInstanceType
 
 	def modifyInstanceType(self):

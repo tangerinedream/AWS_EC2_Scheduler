@@ -2,6 +2,7 @@
 import boto3
 import json
 import logging
+import logging.handlers
 import time
 #import sys, getopt
 import argparse
@@ -15,10 +16,10 @@ __author__ = "Gary Silverman"
 class Orchestrator(object):
 
 	# Class Variables
-	SPEC_REGION_KEY='Region'
+	SPEC_REGION_KEY='WorkloadRegion'
 
-	ENVIRONMENT_FILTER_TAG_KEY='EnvFilterTagName'
-	ENVIRONMENT_FILTER_TAG_VALUE='EnvFilterTagValue'
+	ENVIRONMENT_FILTER_TAG_KEY='WorkloadFilterTagName'
+	ENVIRONMENT_FILTER_TAG_VALUE='WorkloadFilterTagValue'
 
 	VPC_ID_KEY='VPC_ID'
 
@@ -54,9 +55,10 @@ class Orchestrator(object):
 	LOG_LEVEL_INFO='info'
 	LOG_LEVEL_DEBUG='debug'
 
-	def __init__(self, partitionTargetValue, loglevel, region='us-west-2', dryRun=False):
+	def __init__(self, partitionTargetValue, loglevel, dynamoDBRegion, dryRun=False):
 		# default to us-west-2
-		self.region=region 
+		self.dynamoDBRegion=dynamoDBRegion 
+		self.workloadRegion='us-west-2'  #default
 
 		# The commmand line param will be passed as a string
 		self.dryRunFlag=dryRun
@@ -64,7 +66,7 @@ class Orchestrator(object):
 		###
 		# DynamoDB Table Related
 		#
-		self.dynDBC = boto3.client('dynamodb', region_name=self.region)
+		self.dynDBC = boto3.client('dynamodb', region_name=self.dynamoDBRegion)
 
 		# Directive DynamoDB Table Related
 		self.workloadSpecificationTableName=Orchestrator.WORKLOAD_SPEC_TABLE_NAME
@@ -76,44 +78,13 @@ class Orchestrator(object):
 		self.tierSpecPartitionKey=Orchestrator.TIER_SPEC_PARTITION_KEY # Same as workloadSpecificationPartitionKey
 
 		# Table requires the DynamoDB.Resource
-		self.dynDBR = boto3.resource('dynamodb', region_name=self.region)
+		self.dynDBR = boto3.resource('dynamodb', region_name=self.dynamoDBRegion)
 		self.tierSpecTable = self.dynDBR.Table(self.tierSpecTableName)
 		#
 		###
 
-		###
-		# EC2 Resouce
-		self.ec2R = boto3.resource('ec2', region_name=self.region)
-		#
-		###
-
-		
-		###
-		# Python / Boto Datastructures
-		#
-		# {
-		#	"SpecName" : "BotoTestCase1",
-		#	"Region" : "us-west-2",
-		#	"EnvFilterTagName" : "Environment",
-		#	"EnvFilterTagValue" : "ENV001",
-		#	"TierFilterTagName" : "Role",
-		# }
-		#
 		self.workloadSpecificationDict={}
 
-		# {
-		#   "SpecName": "BotoTestCase1",
-		#   "TierTagValue": "Role_AppServer"
-		#   "TierStart": {
-		#     "TierSequence": "1",
-		#     "TierSynchronization": "False"
-		#   },
-		#   "TierStop": {
-		#     "TierSequence": "1",
-		#     "TierStopOverrideFilename": "/tmp/StopOverride",
-		#     "TierSynchronization": "True"
-		#   },
-		# }
 		self.tierSpecDict={}
 
 		# Dynamically created based on tierSpecDict, based on TierSequence for Action specified
@@ -141,6 +112,13 @@ class Orchestrator(object):
 
 		# Grab general workload information from DynamoDB
 		self.lookupWorkloadSpecification(self.partitionTargetValue)
+
+		# The region where the workload is running.  Note: this may be a different region than the 
+		# DynamodDB configuration
+		self.workloadRegion=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
+
+		# Set the Workload Region
+		self.ec2R = boto3.resource('ec2', region_name=self.workloadRegion)
 
 		# Grab tier specific workload information from DynamoDB
 		self.lookupTierSpecs(self.partitionTargetValue)
@@ -450,11 +428,11 @@ class Orchestrator(object):
 		# Determine if operations on the Tier should be synchronized or not
 		tierSynchronized=self.isTierSynchronized(tierName, Orchestrator.TIER_STOP)
 
-		# Grab the region the worker should make API calls against
-		region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
+		# Grab the EC2 region (not DynamodDB region) for the worker to make API calls
+		#region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
 		
 		for currInstance in instancesToStopList:
-			stopWorker = StopWorker(region, currInstance, self.dryRunFlag) 
+			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag) 
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
 				self.workloadSpecificationDict[Orchestrator.SSM_S3_BUCKET_NAME], 
@@ -491,12 +469,12 @@ class Orchestrator(object):
 		#syncFlag=self.isTierSynchronized(tierName, Orchestrator.TIER_START)
 
 		# Grab the region the worker should make API calls against
-		region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
+		#region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
 
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
 			self.logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(region, currInstance, self.dryRunFlag)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag)
 			startWorker.execute()
 
 		# Delay to be introduced prior to allowing the next tier to be actioned.
@@ -532,10 +510,23 @@ class Orchestrator(object):
 		elif( loglevel == 'notset' ):
 			loggingLevelSelected=logging.NOTSET
 
+		filenameVal='Orchestrator_' + self.partitionTargetValue + '.log' 
+
 		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s\n', 
-			filename='Orchestrator_' + self.partitionTargetValue + '.log', 
-			filemode='w', 
+			filename=filenameVal, 
 			level=loggingLevelSelected)
+
+
+		# Add the rotating file handler 
+		
+		handler = logging.handlers.RotatingFileHandler(
+			filename=filenameVal,  
+            mode='a',
+            maxBytes=1024*1024, 
+            backupCount=30)
+
+		self.logger.addHandler(handler)
+
 		
 		# Setup the Handlers
 		# create console handler and set level to debug
@@ -569,7 +560,7 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser(description='Command line parser')
 	parser.add_argument('-w','--workloadIdentifier', help='Workload Identifier to Action Upon',required=True)
-	parser.add_argument('-r','--workloadRegion', help='Region where the Workload is running', required=True)
+	parser.add_argument('-r','--dynamoDBRegion', help='Region where the DynamoDB configuration exists. Note: could be different from the target EC2 workload is running', required=True)
 	parser.add_argument('-a','--action', choices=['Stop', 'Start'], help='Action to Orchestrate (e.g. Stop or Start)', required=False)
 	parser.add_argument('-t','--testcases', action='count', help='Run the test cases', required=False)
 	parser.add_argument('-d','--dryrun', action='count', help='Run but take no Action', required=False)
@@ -588,7 +579,7 @@ if __name__ == "__main__":
 		dryRun = False
 
 	# Launch the Orchestrator - the main component of the subsystem
-	orchMain = Orchestrator(args.workloadIdentifier, loglevel, args.workloadRegion, dryRun)
+	orchMain = Orchestrator(args.workloadIdentifier, loglevel, args.dynamoDBRegion, dryRun)
 
 	# If testcases set, run them, otherwise run the supplied Action only
 	if( args.testcases > 0 ):	

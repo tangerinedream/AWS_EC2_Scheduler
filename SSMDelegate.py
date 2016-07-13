@@ -40,19 +40,25 @@ class SSMDelegate(object):
 	SCRIPT_STOP_INSTANCE='Stop'
 	SCRIPT_NO_ACTION='Bypass'  # Bypass means skip stopping this instance
 
+	S3_BUCKET_LOCATION_NOT_YET_DETERMINED = 'unset'
+	S3_BUCKET_IN_WRONG_REGION='BadS3BucketRegion'
+	S3_BUCKET_IN_CORRECT_REGION='GoodS3BucketRegion'
+
 	OS_TYPE_LINUX = 'Linux'
 	OS_TYPE_WINDOWS = 'Windows'
 
 	SSM_COMMAND_ID = 'CommandId'
 	
 
-	def __init__(self, instanceId, bucketName, keyPrefixName, fileURI, osType, region_name='us-west-2'):
+	def __init__(self, instanceId, bucketName, keyPrefixName, fileURI, osType, ddbRegion, workloadRegion='us-west-2'):
 
 		self.instanceId=instanceId
 
-		self.region_name=region_name
+		self.ddbRegion=ddbRegion
+
+		self.workloadRegion=workloadRegion
 		
-		self.ssm = boto3.client('ssm', self.region_name)
+		self.ssm = boto3.client('ssm', region_name=self.workloadRegion)
 
 		self.ssmDocumentName=''
 
@@ -61,8 +67,8 @@ class SSMDelegate(object):
 		# The duration to sleep while awaiting results from the SSM Command executing
 		self.retrieveSSMResultSleepDuration=10
 
-		# Max wait is 5 minutes (10 seconds * 30 = 300 seconds or 5 minutes)
-		self.getResultRetryCount = 30
+		# Max wait is 5 minutes (10 seconds * 12 = 120 seconds or 2 minutes)
+		self.getResultRetryCount = 12
 
 		self.S3BucketName=bucketName
 		    
@@ -77,7 +83,10 @@ class SSMDelegate(object):
 		# Copy of which OS type is being used
 		self.osType = osType
 
-		self.s3 = boto3.client('s3', self.region_name)
+		# At the time of writing, SSM only outputs to an S3 bucket in the same region as the target instance.
+		self.S3BucketInWorkloadRegion = SSMDelegate.S3_BUCKET_LOCATION_NOT_YET_DETERMINED
+
+		self.s3 = boto3.client('s3', region_name=self.workloadRegion)
 
 		self.initLogging()
 		
@@ -146,7 +155,7 @@ class SSMDelegate(object):
 	###
 	def retrieveSSMResults(self, ssmResponse):
 
-		result = self.DECISION_NO_ACTION  # By default, we will not shut down the instance
+		result = SSMDelegate.DECISION_NO_ACTION  # By default, we will not shut down the instance
 		
 		self.commandId = self.getAttributeFromSSMSendCommand(ssmResponse, SSMDelegate.SSM_COMMAND_ID)
 
@@ -183,8 +192,9 @@ class SSMDelegate(object):
 						scriptRes = filter(str.isalnum, self.lookupS3Result())
 
 						# If the string says Continue, then it's a go.  Otherwise, we won't stop it. 
-						if( scriptRes == self.SCRIPT_STOP_INSTANCE ):
-							result = self.DECISION_STOP_INSTANCE
+						if( scriptRes == SSMDelegate.SCRIPT_STOP_INSTANCE ):
+							result = SSMDelegate.DECISION_STOP_INSTANCE
+
 
 				# So we aren't doing this forever
 				counter += 1
@@ -196,13 +206,15 @@ class SSMDelegate(object):
 			self.logger.warning('Could not find CommandId in response for InstanceId: ' + self.instanceId)
 			self.logger.warning('SSMResponse was: %s' % str(ssmResponse))
 
+
 		# Default is DECISION_NO_ACTION
 		if( result == self.DECISION_STOP_INSTANCE ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' will be stopped')
 		elif( result == self.DECISION_NO_ACTION ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' has override file and will NOT be stopped')
 		else:
-			self.logger.info('InstanceId: ' + self.instanceId + ' unexpected SSM result ==>'+ result +'<==, or inaccessible instance.  Instance will NOT be stopped')
+			result == self.DECISION_NO_ACTION 
+			self.logger.warning('InstanceId: ' + self.instanceId + ' unexpected SSM result ==>'+ result +'<==, or inaccessible instance.  Instance will NOT be stopped')
 
 		return( result )
 
@@ -230,6 +242,43 @@ class SSMDelegate(object):
 
 		return(key)
 
+	def isS3BucketInWorkloadRegion(self):
+
+		result = SSMDelegate.S3_BUCKET_LOCATION_NOT_YET_DETERMINED
+		if( self.S3BucketInWorkloadRegion == SSMDelegate.S3_BUCKET_LOCATION_NOT_YET_DETERMINED ):
+			# Per SSM, the S3 output bucket must be in the same region as the target instance
+
+			# Determine region of the target bucket
+			S3BucketLocRes = self.s3.get_bucket_location(Bucket=self.S3BucketName)
+			if( 'LocationConstraint' in S3BucketLocRes ):
+				S3BucketLoc = S3BucketLocRes['LocationConstraint']
+
+				# Determine if the same as the workload region.
+				# If it is not, then SSM will not log the result of the command execution
+				# and we won't be able to ascertain if the command ran successfully
+				if( S3BucketLoc == self.workloadRegion ):
+					result = SSMDelegate.S3_BUCKET_IN_CORRECT_REGION
+					self.logger.debug('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
+				
+				elif( (S3BucketLoc == None) and ( self.workloadRegion == 'us-east-1' ) ):
+					result = SSMDelegate.S3_BUCKET_IN_CORRECT_REGION
+					self.logger.debug('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
+				
+				else:
+					result = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
+					self.logger.warning('The S3 bucket cannot be confirmed to be in the Workload Region. SSM will not log the results of commands to buckets outside of the instances region. As such, no instances will be stopped, since the SSM result checking for the override file cannot be determined.')
+					self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
+			
+			else:
+				result = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
+				self.logger.warning('The S3 bucket cannot be confirmed to be in the Workload Region. SSM will not log the results of commands to buckets outside of the instances region. As such, no instances will be stopped, since the SSM result checking for the override file cannot be determined.')
+				self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
+
+		self.S3BucketInWorkloadRegion=result
+		return(result)
+
+		
+
 	def lookupS3Result(self):
 		content=''
 		# Return the output result from the script execution
@@ -249,6 +298,7 @@ class SSMDelegate(object):
 
 			# Read the content
 			content = stream.read()
+
 
 		return(content)
 

@@ -13,8 +13,9 @@ AWS_EC2_Scheduler has the following differentiating features:
 ## What to do next
 Do a once over on the documentation, then try it out.
   1. Address the SSM Prerequisites
-    1. Create an S3 bucket for the SSM processing
+    1. Create an S3 bucket for the SSM processing.  ***Note*** Due to a limitation in SSM, the bucket must exist in the same region as where the target ssm instances are running.  Otherwise, SSM will **not** log the result, and as such, this software will poll S3 for 5 minutes per instance waiting for the SSM results to appear in S3, which will never happen. 
     1. Configure Lifecycle rules on your bucket for 1 day, you shouldn't need more
+    1. If utilizing the SSM feature, the invoker of this software requires network visibility to the target instances.  If you are running the software outside of EC2, you may need a public IP address on target instances.  You can check for network visibility by using the management console to run an SSM command before attempting to use this software.  If the Management Console (EC2-->Commands-->Command History-->Run Commmand) Filter doesn't show your targeted instances, then you will likely need to add a Public IP, or assign an EIP.  This is an SSM dependency. 
   1. Create your DynamoDB tables
     1. Ensure correct table naming, and
     1. Ensure correct provisioned throughput
@@ -24,11 +25,21 @@ Do a once over on the documentation, then try it out.
     1. Ensure each tier within the workload has a unique Tag Key and Tag Value (e.g. Tag Key Name is "Role", Tag Value is "Web", or Tag Value is "DB", etc..)
   1. Enable Cron or Lambda with Scheduling Actions to launch the Orchestrator python script, which does the work.
     1. If running the product from an instance, ensure both python 2.7.x and boto3 are installed.
+    ```
+    sudo apt-get install python-pip
+    pip install boto3
+    ```
     1. If running from Lambda, python and boto3 are preinstalled. 
   1. Ensure IAM Roles and Policies are setup.  You will need an IAM Role for each instance running SSM (if you already have a role, you may simply add the below policy to it).  You will also want an IAM Role for the instance which will actually run the Orchestration script.
     1. For the instances being managed, setup the IAM Role per the following instructions.
       1. [Ensure your IAM *instance roles* are enabled for the SSM agent.  Use AmazonEC2RoleforSSM (instance trust policy) and please ensure you understand how SSM works prior to use.](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/delegate-commands.html, "SSM Instance Role Permissions").  For a full set of SSM Prerequsites, look [Here](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/remote-commands-prereq.html)
-      1. [Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html "Installing SSM")
+      1. [Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html "Installing SSM").  Below is an example for Ubuntu, using UserData
+      ```
+      #!/bin/bash
+      cd /tmp			
+      curl https://amazon-ssm-us-west-2.s3.amazonaws.com/latest/debian_amd64/amazon-ssm-agent.deb -o amazon-ssm-agent.deb
+      dpkg -i amazon-ssm-agent.deb
+      ```
     1. For the instance from which you will be running the product, you'll need the following Policy enabled for either the instance (if running within AWS), or attached to an IAM user if running outside of AWS.
 
 ### IAM Details: instance running the product
@@ -53,11 +64,13 @@ Do a once over on the documentation, then try it out.
         {
             "Sid": "Stmt1465181721000",
             "Effect": "Allow",
-            "Action": [
+			"Action": [
                 "s3:GetObject",
-                "s3:ListBucket"
+                "s3:ListBucket",
+                "s3:GetBucketLocation"
             ],
             "Resource": [
+                "arn:aws:s3:::<your-bucket-name-here>",
                 "arn:aws:s3:::<your-bucket-name-here>/*"
             ]
         },
@@ -99,21 +112,25 @@ Do a once over on the documentation, then try it out.
 ## DynamoDB Tables
 All of the configuration is stored in DynamodDB.  Currently, the provisioning of the tables is not automated but could be done by anyone interested in contributing.  In the meantime, you'll need to provision two tables, and I recommend doing so with a provisioned throughput of 1 unit for both write and read (eventual consistency).  That will set you back about $0.59/month per table.
 ### WorkloadSpecification
+Table Name is WorkloadSpecification
+Primary Key is SpecName
+Sort Key is not used
+
 For each workload, there is one entry in the table.  Each workload table entry maps to one or more TierSpecification, based on the number of tiers that comprise the workload.
 
 The workload specification contains tier independent configuration of the workload.  The way to think about it, is the WorkloadSpecification represents the entire system being managed, which consists of one or more tiers.
 
 <dl>
-<dt>EnvFilterTagName</dt>
+<dt>WorkloadFilterTagName</dt>
 <dd>:  The name of the tag *key* (on the instance) that will be used to group the unique members of this workload.  In the example DynamoDB Table, "Environment" is the tag key. </dd>
 
-<dt>EnvFilterTagValue</dt>
+<dt>WorkloadFilterTagValue</dt>
 <dd>: The tag *value* identifying the unique set of members within the EnvFilterTagName. In the example DynamoDB Table, "ENV001" is the tag value</dd>
 
-<dt>Region</dt>
+<dt>WorkloadRegion</dt>
 <dd>: The AWS region identifier where the _workload_ runs, **not** the region where this open source product is executed</dd>
 
-<dt>SpecName</dt>
+<dt>SpecName (Primary Key)</dt>
 <dd>: The unique name of the Workload, the key of the WorkloadSpecification table and foreign key of the TierSpecification table</dd>
 
 <dt>SSMS3BucketName</dt>
@@ -132,9 +149,9 @@ The workload specification contains tier independent configuration of the worklo
 #### JSON: WorkloadSpecification 
 ```json
 {
-  "EnvFilterTagName": "Environment",
-  "EnvFilterTagValue": "ENV001",
-  "Region": "us-west-2",
+  "WorkloadFilterTagName": "Environment",
+  "WorkloadFilterTagValue": "ENV001",
+  "WorkloadRegion": "us-west-2",
   "SpecName": "BotoTestCase1",
   "SSMS3BucketName": "myBucketName",
   "SSMS3KeyPrefixName": "ssmRemoteComandResults",
@@ -144,6 +161,10 @@ The workload specification contains tier independent configuration of the worklo
 ```
 
 ### TierSpecification
+Table Name is WorkloadSpecification
+Primary Key is SpecName
+Sort Key is TierTagValue
+
 The tier specification represent the tier-specific configuration.  A tier means as set of instances that share the same Tag Value.  For example, a tier could be "Web", or "App", or "DB", or however your architecture is laid out.  Within a tier, there may be one or more instances.  As there may be multiple rows for a given WorkloadSpecification, each Tier contains the Workload identifier.
 
 The tier specification is somewhat more complex than the WorkloadSpecification, as it contains nested configuration.  That is because a tier has configuration information for Starting, which is different than Stopping.  
@@ -159,7 +180,7 @@ Here are a few things you **need** to know about the Tier Specification:
 Definition List
 <dl>
 
-<dt>SpecName</dt>
+<dt>SpecName (Primary Key)</dt>
 <dd>: The unique name of the Workload, the key of the WorkloadSpecification table and foreign key of the TierSpecification table</dd>
 
 <dt>TierStart</dt>
@@ -184,7 +205,7 @@ Definition List
 <dd>: (Optional - required if TierStopOverrideFilename set) The name of the OS in the guest.
 Valid values are "Linux", or "Windows"</dd>
 
-<dt>TierTagValue</dt>
+<dt>TierTagValue (Sort Key)</dt>
 <dd>: The name of the Tag *Value* that will be used as a search target for instances for this particular tier.  The Tag *Key* is specified in the WorkloadSpec.</dd>
 
 
@@ -218,7 +239,7 @@ Or, for Windows guest OS ...
   },
   "TierStop": {
     "TierSequence": "0",
-    "TierStopOverrideFilename": "C:\ignore.txt",
+    "TierStopOverrideFilename": "C:\\ignore.txt",
     "TierStopOverrideOperatingSystem": "Windows",
     "TierSynchronization": "False"
   },
