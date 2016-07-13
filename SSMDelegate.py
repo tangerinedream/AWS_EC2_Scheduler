@@ -249,30 +249,35 @@ class SSMDelegate(object):
 			# Per SSM, the S3 output bucket must be in the same region as the target instance
 
 			# Determine region of the target bucket
-			S3BucketLocRes = self.s3.get_bucket_location(Bucket=self.S3BucketName)
-			if( 'LocationConstraint' in S3BucketLocRes ):
-				S3BucketLoc = S3BucketLocRes['LocationConstraint']
+			try:
+				S3BucketLocRes = self.s3.get_bucket_location(Bucket=self.S3BucketName)
+				if( 'LocationConstraint' in S3BucketLocRes ):
+					S3BucketLoc = S3BucketLocRes['LocationConstraint']
 
-				# Determine if the same as the workload region.
-				# If it is not, then SSM will not log the result of the command execution
-				# and we won't be able to ascertain if the command ran successfully
-				if( S3BucketLoc == self.workloadRegion ):
-					result = SSMDelegate.S3_BUCKET_IN_CORRECT_REGION
-					self.logger.debug('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
-				
-				elif( (S3BucketLoc == None) and ( self.workloadRegion == 'us-east-1' ) ):
-					result = SSMDelegate.S3_BUCKET_IN_CORRECT_REGION
-					self.logger.debug('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
+					# Determine if the same as the workload region.
+					# If it is not, then SSM will not log the result of the command execution
+					# and we won't be able to ascertain if the command ran successfully
+					if( S3BucketLoc == self.workloadRegion ):
+						result = SSMDelegate.S3_BUCKET_IN_CORRECT_REGION
+						self.logger.debug('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
+					
+					elif( (S3BucketLoc == None) and ( self.workloadRegion == 'us-east-1' ) ):
+						result = SSMDelegate.S3_BUCKET_IN_CORRECT_REGION
+						self.logger.debug('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
+					
+					else:
+						result = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
+						self.logger.warning('The S3 bucket cannot be confirmed to be in the Workload Region. SSM will not log the results of commands to buckets outside of the instances region. As such, no instances will be stopped, since the SSM result checking for the override file cannot be determined.')
+						self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
 				
 				else:
 					result = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
 					self.logger.warning('The S3 bucket cannot be confirmed to be in the Workload Region. SSM will not log the results of commands to buckets outside of the instances region. As such, no instances will be stopped, since the SSM result checking for the override file cannot be determined.')
 					self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
 			
-			else:
-				result = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
-				self.logger.warning('The S3 bucket cannot be confirmed to be in the Workload Region. SSM will not log the results of commands to buckets outside of the instances region. As such, no instances will be stopped, since the SSM result checking for the override file cannot be determined.')
-				self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
+			except Exception as e:
+				self.logger.error('isS3BucketInWorkloadRegion() The Bucket Name does not exist '+ e.response['Error']['Message'])
+				response = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
 
 		self.S3BucketInWorkloadRegion=result
 		return(result)
