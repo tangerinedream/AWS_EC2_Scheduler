@@ -62,9 +62,18 @@ Do a once over on the documentation, then try it out.
             ]
         },
         {
+            "Sid": "SNSPublicationClause",
+            "Effect": "Allow",
+            "Action": [
+                "sns:Publish",
+                "sns:CreateTopic"
+            ],
+            "Resource": "arn:aws:sns:us-west-2:<your-account-number-here>:<your-sns-topic(s)>"
+        },
+        {
             "Sid": "Stmt1465181721000",
             "Effect": "Allow",
-			"Action": [
+			      "Action": [
                 "s3:GetObject",
                 "s3:ListBucket",
                 "s3:GetBucketLocation"

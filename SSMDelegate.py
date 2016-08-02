@@ -36,6 +36,7 @@ class SSMDelegate(object):
 
 	DECISION_STOP_INSTANCE='Stop'
 	DECISION_NO_ACTION='Bypass'
+	DECISION_NO_ACTION_UNEXPECTED_RESULT='unexpectedResult'
 
 	SCRIPT_STOP_INSTANCE='Stop'
 	SCRIPT_NO_ACTION='Bypass'  # Bypass means skip stopping this instance
@@ -213,7 +214,7 @@ class SSMDelegate(object):
 		elif( result == self.DECISION_NO_ACTION ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' has override file and will NOT be stopped')
 		else:
-			result == self.DECISION_NO_ACTION 
+			result == self.DECISION_NO_ACTION_UNEXPECTED_RESULT 
 			self.logger.warning('InstanceId: ' + self.instanceId + ' unexpected SSM result ==>'+ result +'<==, or inaccessible instance.  Instance will NOT be stopped')
 
 		return( result )
@@ -276,7 +277,7 @@ class SSMDelegate(object):
 					self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
 			
 			except Exception as e:
-				self.logger.error('isS3BucketInWorkloadRegion() The Bucket Name does not exist '+ e.response['Error']['Message'])
+				self.logger.error('isS3BucketInWorkloadRegion() '+ e.response['Error']['Message'])
 				response = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
 
 		self.S3BucketInWorkloadRegion=result

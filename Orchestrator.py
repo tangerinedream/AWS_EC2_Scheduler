@@ -16,22 +16,25 @@ __author__ = "Gary Silverman"
 class Orchestrator(object):
 
 	# Class Variables
-	SPEC_REGION_KEY='WorkloadRegion'
+	WORKLOAD_SPEC_TABLE_NAME='WorkloadSpecification'
+	WORKLOAD_SPEC_PARTITION_KEY='SpecName'
 
-	ENVIRONMENT_FILTER_TAG_KEY='WorkloadFilterTagName'
-	ENVIRONMENT_FILTER_TAG_VALUE='WorkloadFilterTagValue'
+	WORKLOAD_SPEC_REGION_KEY='WorkloadRegion'
 
-	VPC_ID_KEY='VPC_ID'
+	WORKLOAD_ENVIRONMENT_FILTER_TAG_KEY='WorkloadFilterTagName'
+	WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE='WorkloadFilterTagValue'
 
-	SSM_S3_BUCKET_NAME='SSMS3BucketName'
-	SSM_S3_KEY_PREFIX_NAME='SSMS3KeyPrefixName'
+	WORKLOAD_VPC_ID_KEY='VPC_ID'
+
+	WORKLOAD_SSM_S3_BUCKET_NAME='SSMS3BucketName'
+	WORKLOAD_SSM_S3_KEY_PREFIX_NAME='SSMS3KeyPrefixName'
+
+	WORKLOAD_SNS_TOPIC_NAME='SNSTopicName'
+
+
 
 	TIER_FILTER_TAG_KEY='TierFilterTagName'
 	TIER_FILTER_TAG_VALUE='TierTagValue'
-
-
-	WORKLOAD_SPEC_TABLE_NAME='WorkloadSpecification'
-	WORKLOAD_SPEC_PARTITION_KEY='SpecName'
 
 	TIER_SPEC_TABLE_NAME='TierSpecification'
 	TIER_SPEC_PARTITION_KEY='SpecName'
@@ -83,6 +86,10 @@ class Orchestrator(object):
 		#
 		###
 
+		# Get the SNS Topic
+		self.snsTopicR = boto3.resource('sns', region_name=dynamoDBRegion)
+		self.snsTopic = ''
+
 		self.workloadSpecificationDict={}
 
 		self.tierSpecDict={}
@@ -115,7 +122,7 @@ class Orchestrator(object):
 
 		# The region where the workload is running.  Note: this may be a different region than the 
 		# DynamodDB configuration
-		self.workloadRegion=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
+		self.workloadRegion=self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_REGION_KEY]
 
 		# Set the Workload Region
 		self.ec2R = boto3.resource('ec2', region_name=self.workloadRegion)
@@ -325,8 +332,8 @@ class Orchestrator(object):
 		self.logger.debug('lookupInstancesByFilter() instance state %s' % targetInstanceStateKey)
 		self.logger.debug('lookupInstancesByFilter() tier tag key %s' % self.workloadSpecificationDict[Orchestrator.TIER_FILTER_TAG_KEY])
 		self.logger.debug('lookupInstancesByFilter() tier tag value %s' % tierName)
-		self.logger.debug('lookupInstancesByFilter() Env tag key %s' % self.workloadSpecificationDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY])
-		self.logger.debug('lookupInstancesByFilter() Env tag value %s' % self.workloadSpecificationDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE])
+		self.logger.debug('lookupInstancesByFilter() Env tag key %s' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_KEY])
+		self.logger.debug('lookupInstancesByFilter() Env tag value %s' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE])
 
 
 		targetFilter = [
@@ -335,8 +342,8 @@ class Orchestrator(object):
 		        'Values': [targetInstanceStateKey]
 		    },
 		    {
-		        'Name': 'tag:' + self.workloadSpecificationDict[Orchestrator.ENVIRONMENT_FILTER_TAG_KEY],
-		        'Values': [self.workloadSpecificationDict[Orchestrator.ENVIRONMENT_FILTER_TAG_VALUE]]
+		        'Name': 'tag:' + self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_KEY],
+		        'Values': [self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE]]
 		    },
 		    {
 		        'Name': 'tag:' + self.workloadSpecificationDict[Orchestrator.TIER_FILTER_TAG_KEY],
@@ -345,10 +352,10 @@ class Orchestrator(object):
 		]
 
 		# If the Optional VPC ID was provided to further tighten the filter, include it.
-		if( Orchestrator.VPC_ID_KEY in self.workloadSpecificationDict ):
+		if( Orchestrator.WORKLOAD_VPC_ID_KEY in self.workloadSpecificationDict ):
 			vpc_filter_dict_element = { 
 				'Name': 'vpc-id', 
-		        'Values': [self.workloadSpecificationDict[Orchestrator.VPC_ID_KEY]]
+		        'Values': [self.workloadSpecificationDict[Orchestrator.WORKLOAD_VPC_ID_KEY]]
 			}
 			targetFilter.append(vpc_filter_dict_element)
 			self.logger.debug('VPC_ID provided, Filter List is %s' % str(targetFilter))
@@ -376,13 +383,23 @@ class Orchestrator(object):
 
 			# Sequence the tiers per the STOP order
 			self.sequenceTiers(Orchestrator.TIER_STOP)
-			
-			for currTier in self.sequencedTiersList:
-			
-				self.logger.info('\nOrchestrate() Stopping Tier: ' + currTier)
-			
-				# Stop the next tier in the sequence
-				self.stopATier(currTier)
+
+			# Make or retrieve the SNS Topic setup.  Method is Idempotent
+			try:
+				self.snsTopic = self.snsTopicR.create_topic( Name=self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME] )
+				self.snsTopicSubjectLine = self.makeSNSTopicSubjectLine()
+
+			except Exception as e:
+				#self.logger.error('orchestrate() - creating SNS Topic' + e.response['Error']['Message'])
+				self.logger.error('orchestrate() - creating SNS Topic ' + str(e) )
+
+			else:				
+				for currTier in self.sequencedTiersList:
+				
+					self.logger.info('\nOrchestrate() Stopping Tier: ' + currTier)
+				
+					# Stop the next tier in the sequence
+					self.stopATier(currTier)
 				
 
 		elif( action == Orchestrator.ACTION_START ): 
@@ -404,7 +421,10 @@ class Orchestrator(object):
 		else:
 		
 			self.logger.warning('Action requested %s is not yet implemented. No action taken', action)	
-			
+	
+	def makeSNSTopicSubjectLine(self):
+		res = 'AWS_EC2_Scheduler Notification:  Workload==>' + self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME]
+		return( res )	    
 
 
 	def stopATier(self, tierName):
@@ -429,14 +449,14 @@ class Orchestrator(object):
 		tierSynchronized=self.isTierSynchronized(tierName, Orchestrator.TIER_STOP)
 
 		# Grab the EC2 region (not DynamodDB region) for the worker to make API calls
-		#region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
+		#region=self.workloadSpecificationDict[self.WORKLOAD_SPEC_REGION_KEY]
 		
 		for currInstance in instancesToStopList:
-			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag) 
+			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.dryRunFlag) 
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
-				self.workloadSpecificationDict[Orchestrator.SSM_S3_BUCKET_NAME], 
-				self.workloadSpecificationDict[Orchestrator.SSM_S3_KEY_PREFIX_NAME],
+				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME], 
+				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME],
 				self.getTierStopOverrideFilename(tierName),
 				self.getTierOperatingSystemType(tierName)
 			)
@@ -469,7 +489,7 @@ class Orchestrator(object):
 		#syncFlag=self.isTierSynchronized(tierName, Orchestrator.TIER_START)
 
 		# Grab the region the worker should make API calls against
-		#region=self.workloadSpecificationDict[self.SPEC_REGION_KEY]
+		#region=self.workloadSpecificationDict[self.WORKLOAD_SPEC_REGION_KEY]
 
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
@@ -547,7 +567,7 @@ class Orchestrator(object):
 		self.orchestrate(Orchestrator.ACTION_START )
 
 		# Test Case: Start an Environment
-		sleepSecs=45
+		sleepSecs=20
 		self.logger.info('\n### Sleeping for ' + str(sleepSecs) + ' seconds ###')
 		time.sleep(sleepSecs)
 

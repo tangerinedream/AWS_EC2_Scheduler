@@ -7,6 +7,9 @@ from SSMDelegate import SSMDelegate
 __author__ = "Gary Silverman"
 
 class Worker(object):
+	SNS_SUBJECT_PREFIX_WARNING="Warning:"
+	SNS_SUBJECT_PREFIX_INFORMATIONAL="Info:"
+
 	def __init__(self, workloadRegion, instance, dryRunFlag):
 
 		self.workloadRegion=workloadRegion
@@ -69,10 +72,13 @@ class StartWorker(Worker):
 
 
 class StopWorker(Worker):
-	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag):
+	def __init__(self, ddbRegion, workloadRegion, snsTopic, snsTopicSubject, instance, dryRunFlag):
 		super(StopWorker, self).__init__(workloadRegion, instance, dryRunFlag)
 		
 		self.ddbRegion=ddbRegion
+
+		self.snsTopic = snsTopic
+		self.snsTopicSubject = snsTopicSubject
 
 		# MUST convert string False to boolean False
 		self.waitFlag=strtobool('False')
@@ -159,32 +165,56 @@ class StopWorker(Worker):
 				if( overrideRes == SSMDelegate.S3_BUCKET_IN_WRONG_REGION ):
 					# Per SSM, the bucket must be in the same region as the target instance, otherwise the results will not be writte to S3 and cannot be obtained.
 					self.overrideFlag=True
-					self.logger.info(self.instance.id + ' Instance will be not be stopped because the S3 bucket is not in the same region as the workload')
+					warningMsg= Worker.SNS_SUBJECT_PREFIX_WARNING + ' ' + self.instance.id + ' Instance will be not be stopped because the S3 bucket is not in the same region as the workload'
+					self.logger.warning(warningMsg)
+					self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
 
 				elif( overrideRes == SSMDelegate.DECISION_STOP_INSTANCE ):
 					# There is a result and it specifies it is ok to Stop
 					self.overrideFlag=False
 					self.logger.info(self.instance.id + ' Instance will be stopped')
+
+				elif( overrideRes == SSMDelegate.DECISION_NO_ACTION_UNEXPECTED_RESULT ):
+					# Unexpected SSM Result, see log file.  Will default to overrideFlag==true out of abundance for caution
+					self.overrideFlag=True
+					warningMsg = Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped as there was an unexpected SSM result.'
+					self.logger.warning(warningMsg)
+					self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
+
 				else:
 					# Every other result means the instance will be bypassed (e.g. not stopped)
 					self.overrideFlag=True
-					self.logger.info(self.instance.id + ' Instance will be not be stopped because override file was set')
+					msg=Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL +  ' ' + self.instance.id + ' Instance will be not be stopped because override file was set'
+					self.logger.info(msg)
+					self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, msg)
+
 			else:
 				self.overrideFlag=True
-				self.logger.info(self.instance.id + ' Instance will be not be stopped because SSM could not query it')
+				warningMsg=Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped because SSM could not query it'
+				self.logger.warning(warningMsg)
+				self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
 
 		else:
-			self.logger.warning('SSM will not be executed as S3 bucket is not in the same region as the workload. [' + self.instance.id + '] Instance will be not be stopped')
 			self.overrideFlag=True
+			warningMsg=Worker.SNS_SUBJECT_PREFIX_WARNING + ' SSM will not be executed as S3 bucket is not in the same region as the workload. [' + self.instance.id + '] Instance will be not be stopped'
+			self.logger.warning(warningMsg)
+			self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
 		
 		return( self.overrideFlag )
 
+	def publishSNSTopicMessage(self, subjectPrefix, theMessage):
+		try:
+			self.snsTopic.publish(
+				Subject=self.snsTopicSubject + ':' + subjectPrefix,
+				Message=theMessage,
+			)
+
+		except Exception as e:
+			self.logger.error('publishSNSTopicMessage()' + e.response['Error']['Message'])
+
+	
+
 	def setOverrideFlagSet(self, overrideFlag):
-		# Assume False
-		# Run SSM Command to instance
-		#   Associate document to instance  associate_command
-		#   Run Command (output to S3)  send_command
-		#   Set the result
 		self.overrideFlag=strtobool(overrideFlag)
 
 
