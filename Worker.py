@@ -72,7 +72,7 @@ class StartWorker(Worker):
 
 
 class StopWorker(Worker):
-	def __init__(self, ddbRegion, workloadRegion, snsTopic, snsTopicSubject, instance, dryRunFlag):
+	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, dryRunFlag):
 		super(StopWorker, self).__init__(workloadRegion, instance, dryRunFlag)
 		
 		self.ddbRegion=ddbRegion
@@ -83,6 +83,7 @@ class StopWorker(Worker):
 		# MUST convert string False to boolean False
 		self.waitFlag=strtobool('False')
 		self.overrideFlag=strtobool('False')
+		self.snsNotConfigured=snsNotConfigured
 
 		
 	def stopInstance(self):
@@ -167,7 +168,8 @@ class StopWorker(Worker):
 					self.overrideFlag=True
 					warningMsg= Worker.SNS_SUBJECT_PREFIX_WARNING + ' ' + self.instance.id + ' Instance will be not be stopped because the S3 bucket is not in the same region as the workload'
 					self.logger.warning(warningMsg)
-					self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
+					if(self.snsNotConfigured == False):
+						self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg, self.instance)
 
 				elif( overrideRes == SSMDelegate.DECISION_STOP_INSTANCE ):
 					# There is a result and it specifies it is ok to Stop
@@ -179,34 +181,49 @@ class StopWorker(Worker):
 					self.overrideFlag=True
 					warningMsg = Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped as there was an unexpected SSM result.'
 					self.logger.warning(warningMsg)
-					self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
+					if(self.snsNotConfigured == False):
+						self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg, self.instance)
 
 				else:
 					# Every other result means the instance will be bypassed (e.g. not stopped)
 					self.overrideFlag=True
 					msg=Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL +  ' ' + self.instance.id + ' Instance will be not be stopped because override file was set'
 					self.logger.info(msg)
-					self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, msg)
+					if(self.snsNotConfigured == False):
+						self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, msg, self.instance)
 
 			else:
 				self.overrideFlag=True
 				warningMsg=Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped because SSM could not query it'
 				self.logger.warning(warningMsg)
-				self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
+				if(self.snsNotConfigured == False):
+					self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg, self.instance)
 
 		else:
 			self.overrideFlag=True
 			warningMsg=Worker.SNS_SUBJECT_PREFIX_WARNING + ' SSM will not be executed as S3 bucket is not in the same region as the workload. [' + self.instance.id + '] Instance will be not be stopped'
 			self.logger.warning(warningMsg)
-			self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
+			if(self.snsNotConfigured == False):
+				self.publishSNSTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
 		
 		return( self.overrideFlag )
 
-	def publishSNSTopicMessage(self, subjectPrefix, theMessage):
+	def publishSNSTopicMessage(self, subjectPrefix, theMessage, instance=None):
+		if( instance is not None ):
+			tagsMsg=''
+			for tag in instance.tags:
+				tagsMsg = tagsMsg + '\nTag {0}=={1}'.format( str(tag['Key']), str(tag['Value']) ) 
+
+			print tagsMsg
+
+				#for key, value in tag.iteritems():
+				#tag.encode('utf-8') 
+				    #tagsMsg = tagsMsg + '\nTag=={0} Value=={1}'.format(str(key), str(value))
+
 		try:
 			self.snsTopic.publish(
 				Subject=self.snsTopicSubject + ':' + subjectPrefix,
-				Message=theMessage,
+				Message=theMessage + tagsMsg,
 			)
 
 		except Exception as e:

@@ -89,6 +89,7 @@ class Orchestrator(object):
 		# Get the SNS Topic
 		self.snsTopicR = boto3.resource('sns', region_name=dynamoDBRegion)
 		self.snsTopic = ''
+		self.snsNotConfigured=False
 
 		self.workloadSpecificationDict={}
 
@@ -384,22 +385,25 @@ class Orchestrator(object):
 			# Sequence the tiers per the STOP order
 			self.sequenceTiers(Orchestrator.TIER_STOP)
 
-			# Make or retrieve the SNS Topic setup.  Method is Idempotent
-			try:
-				self.snsTopic = self.snsTopicR.create_topic( Name=self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME] )
-				self.snsTopicSubjectLine = self.makeSNSTopicSubjectLine()
+			if (self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]):
 
-			except Exception as e:
-				#self.logger.error('orchestrate() - creating SNS Topic' + e.response['Error']['Message'])
-				self.logger.error('orchestrate() - creating SNS Topic ' + str(e) )
+				# Make or retrieve the SNS Topic setup.  Method is Idempotent
+				try:
+					self.snsTopic = self.snsTopicR.create_topic( Name=self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME] )
+					self.snsTopicSubjectLine = self.makeSNSTopicSubjectLine()
 
-			else:				
-				for currTier in self.sequencedTiersList:
-				
-					self.logger.info('\nOrchestrate() Stopping Tier: ' + currTier)
-				
-					# Stop the next tier in the sequence
-					self.stopATier(currTier)
+				except Exception as e:
+					self.logger.error('orchestrate() - creating SNS Topic ' + str(e) )
+					self.snsNotConfigured=True
+			else:
+				self.snsNotConfigured=True
+
+			for currTier in self.sequencedTiersList:
+			
+				self.logger.info('\nOrchestrate() Stopping Tier: ' + currTier)
+			
+				# Stop the next tier in the sequence
+				self.stopATier(currTier)
 				
 
 		elif( action == Orchestrator.ACTION_START ): 
@@ -452,7 +456,7 @@ class Orchestrator(object):
 		#region=self.workloadSpecificationDict[self.WORKLOAD_SPEC_REGION_KEY]
 		
 		for currInstance in instancesToStopList:
-			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.dryRunFlag) 
+			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.dryRunFlag) 
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
 				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME], 
