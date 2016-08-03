@@ -427,7 +427,7 @@ class Orchestrator(object):
 			self.logger.warning('Action requested %s is not yet implemented. No action taken', action)	
 	
 	def makeSNSTopicSubjectLine(self):
-		res = 'AWS_EC2_Scheduler Notification:  Workload==>' + self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME]
+		res = 'AWS_EC2_Scheduler Notification:  Workload==>' + self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
 		return( res )	    
 
 

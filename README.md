@@ -139,6 +139,9 @@ The workload specification contains tier independent configuration of the worklo
 <dt>WorkloadRegion</dt>
 <dd>: The AWS region identifier where the _workload_ runs, **not** the region where this open source product is executed</dd>
 
+<dt>SNSTopicName</dt>
+<dd>: The name of the topic to publish SSM related statuses.  For example, whether the override file was set, or other reasons why an instance will not be stopped.</dd>
+
 <dt>SpecName (Primary Key)</dt>
 <dd>: The unique name of the Workload, the key of the WorkloadSpecification table and foreign key of the TierSpecification table</dd>
 
@@ -162,6 +165,7 @@ The workload specification contains tier independent configuration of the worklo
   "WorkloadFilterTagValue": "ENV001",
   "WorkloadRegion": "us-west-2",
   "SpecName": "BotoTestCase1",
+  "SNSTopicName": "SchedulerTesting",
   "SSMS3BucketName": "myBucketName",
   "SSMS3KeyPrefixName": "ssmRemoteComandResults",
   "TierFilterTagName": "Role",
