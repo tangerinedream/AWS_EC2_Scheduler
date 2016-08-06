@@ -63,7 +63,7 @@ class SSMDelegate(object):
 
 		self.ssmDocumentName=''
 
-		self.connectionTimeout=60
+		self.connectionTimeout=180
 
 		# The duration to sleep while awaiting results from the SSM Command executing
 		self.retrieveSSMResultSleepDuration=10
@@ -143,7 +143,7 @@ class SSMDelegate(object):
 			self.logger.debug('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
 
 		except Exception as e:
-			self.logger.error('sendSSMCommand()' + e.response['Error']['Message'])
+			self.logger.error('sendSSMCommand()' + str(e) )
 			response=''
 
 		return( response )
