@@ -143,7 +143,8 @@ class SSMDelegate(object):
 			self.logger.debug('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
 
 		except Exception as e:
-			self.logger.error('sendSSMCommand()' + str(e) )
+			self.logger.warning('sendSSMCommand() Exception occurred. Please ensure SSM agent is installed on instance, \
+and instance is running with Instance Profile (see documentation).  Exception was: ' + str(e) )
 			response=''
 
 		return( response )
@@ -195,12 +196,15 @@ class SSMDelegate(object):
 						# If the string says Continue, then it's a go.  Otherwise, we won't stop it. 
 						if( scriptRes == SSMDelegate.SCRIPT_STOP_INSTANCE ):
 							result = SSMDelegate.DECISION_STOP_INSTANCE
+					else:
+						# Wasn't Success, so let's output what it was
+						self.logger.warning('SSM response completed but not as "Success".  SSM result was ' + str(res) )
 
-
-				# So we aren't doing this forever
-				counter += 1
-				self.logger.info('SSMDelegate::retrieveSSMResults() Awaiting Completed Status. Sleep and retry #' + str(counter))
-				time.sleep(self.retrieveSSMResultSleepDuration)
+				else:
+					# So we aren't doing this forever
+					counter += 1
+					self.logger.info('SSMDelegate::retrieveSSMResults() Awaiting Completed Status. Sleep and retry #' + str(counter))
+					time.sleep(self.retrieveSSMResultSleepDuration)
 
 
 		else:
@@ -209,7 +213,9 @@ class SSMDelegate(object):
 
 
 		# Default is DECISION_NO_ACTION
-		if( result == self.DECISION_STOP_INSTANCE ):
+		if( counter >= self.getResultRetryCount):
+			self.logger.warning('Max retries exceeded for collecting results from S3, so InstanceId: ' + self.instanceId +' will not be stopped')
+		elif( result == self.DECISION_STOP_INSTANCE ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' will be stopped')
 		elif( result == self.DECISION_NO_ACTION ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' has override file and will NOT be stopped')

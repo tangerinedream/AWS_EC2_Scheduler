@@ -229,9 +229,7 @@ class StopWorker(Worker):
 
 
 	def execute(self, S3BucketName, S3KeyPrefixName, overrideFileName, osType):
-		if( self.isOverrideFlagSet(S3BucketName, S3KeyPrefixName, overrideFileName, osType) ):
-			self.logger.info('Override set for instance %s, NOT Stopping the instance' % self.instance.id)
-		else:
+		if( self.isOverrideFlagSet(S3BucketName, S3KeyPrefixName, overrideFileName, osType) == False ):
 			self.stopInstance()
 
 class ScalingWorker(Worker):
