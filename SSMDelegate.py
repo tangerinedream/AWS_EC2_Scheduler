@@ -36,6 +36,7 @@ class SSMDelegate(object):
 
 	DECISION_STOP_INSTANCE='Stop'
 	DECISION_NO_ACTION='Bypass'
+	DECISION_RETRIES_EXCEEDED='RetriesExceeded'
 	DECISION_NO_ACTION_UNEXPECTED_RESULT='unexpectedResult'
 
 	SCRIPT_STOP_INSTANCE='Stop'
@@ -215,12 +216,13 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 		# Default is DECISION_NO_ACTION
 		if( counter >= self.getResultRetryCount):
 			self.logger.warning('Max retries exceeded for collecting results from S3, so InstanceId: ' + self.instanceId +' will not be stopped')
-		elif( result == self.DECISION_STOP_INSTANCE ):
+			result=SSMDelegate.DECISION_RETRIES_EXCEEDED
+		elif( result == SSMDelegate.DECISION_STOP_INSTANCE ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' will be stopped')
-		elif( result == self.DECISION_NO_ACTION ):
+		elif( result == SSMDelegate.DECISION_NO_ACTION ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' has override file and will NOT be stopped')
 		else:
-			result == self.DECISION_NO_ACTION_UNEXPECTED_RESULT 
+			result == SSMDelegate.DECISION_NO_ACTION_UNEXPECTED_RESULT 
 			self.logger.warning('InstanceId: ' + self.instanceId + ' unexpected SSM result ==>'+ result +'<==, or inaccessible instance.  Instance will NOT be stopped')
 
 		return( result )

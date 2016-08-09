@@ -182,6 +182,11 @@ class StopWorker(Worker):
 					warningMsg = Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped as there was an unexpected SSM result.'
 					self.logger.warning(warningMsg)
 
+				elif( overrideRes == SSMDelegate.DECISION_RETRIES_EXCEEDED ):
+					self.overrideFlag=True
+					warningMsg = Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped # retries to collect SSM result from S3 was exceeded'
+					self.logger.warning(warningMsg)
+
 				else:
 					# Every other result means the instance will be bypassed (e.g. not stopped)
 					self.overrideFlag=True
