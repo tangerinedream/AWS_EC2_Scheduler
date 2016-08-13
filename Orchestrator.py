@@ -4,8 +4,9 @@ import json
 import logging
 import logging.handlers
 import time
-#import sys, getopt
+import datetime
 import argparse
+
 from distutils.util import strtobool
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
@@ -91,6 +92,9 @@ class Orchestrator(object):
 		self.snsTopic = ''
 		self.snsNotConfigured=False
 
+		self.startTime=0
+		self.finishTime=0
+
 		self.workloadSpecificationDict={}
 
 		self.tierSpecDict={}
@@ -117,6 +121,9 @@ class Orchestrator(object):
 		self.initLogging(loglevel)
 
 	def initializeState(self):
+
+		# Log the duration of the processing
+		self.startTime = datetime.datetime.now().replace(microsecond=0)
 
 		# Grab general workload information from DynamoDB
 		self.lookupWorkloadSpecification(self.partitionTargetValue)
@@ -425,6 +432,13 @@ class Orchestrator(object):
 		else:
 		
 			self.logger.warning('Action requested %s is not yet implemented. No action taken', action)	
+
+		# capture completion time
+		self.finishTime = datetime.datetime.now().replace(microsecond=0)
+
+		self.logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+		self.logger.info('++ Completed processing for workload ->' + self.partitionTargetValue +'<- in ' + str(self.finishTime - self.startTime) + ' seconds ++')
+		self.logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 	
 	def makeSNSTopicSubjectLine(self):
 		res = 'AWS_EC2_Scheduler Notification:  Workload==>' + self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
