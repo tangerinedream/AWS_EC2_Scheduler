@@ -77,6 +77,19 @@ class Orchestrator(object):
 		self.workloadSpecificationPartitionKey=Orchestrator.WORKLOAD_SPEC_PARTITION_KEY
 		self.partitionTargetValue=partitionTargetValue
 
+		# Create a List of valid dynamoDB attributes to address user typos in dynamoDB table
+		self.workloadSpecificationValidAttributeList = [
+			Orchestrator.WORKLOAD_SPEC_PARTITION_KEY,
+			Orchestrator.WORKLOAD_SPEC_REGION_KEY,
+			Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_KEY,
+			Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE,
+			Orchestrator.WORKLOAD_VPC_ID_KEY,
+			Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME,
+			Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME,
+			Orchestrator.WORKLOAD_SNS_TOPIC_NAME,
+			Orchestrator.TIER_FILTER_TAG_KEY
+		]
+
 		# Tier-specific DynamoDB Table Related
 		self.tierSpecTableName=Orchestrator.TIER_SPEC_TABLE_NAME
 		self.tierSpecPartitionKey=Orchestrator.TIER_SPEC_PARTITION_KEY # Same as workloadSpecificationPartitionKey
@@ -84,6 +97,22 @@ class Orchestrator(object):
 		# Table requires the DynamoDB.Resource
 		self.dynDBR = boto3.resource('dynamodb', region_name=self.dynamoDBRegion)
 		self.tierSpecTable = self.dynDBR.Table(self.tierSpecTableName)
+
+		# Create a List of valid dynamoDB attributes to address user typos in dynamoDB table
+		self.tierSpecificationValidAttributeList = [
+			Orchestrator.TIER_FILTER_TAG_VALUE,
+			Orchestrator.TIER_SPEC_TABLE_NAME,
+			Orchestrator.TIER_SPEC_PARTITION_KEY,
+			Orchestrator.TIER_STOP,
+			Orchestrator.TIER_START,
+			Orchestrator.TIER_NAME,
+			Orchestrator.TIER_SEQ_NBR,
+			Orchestrator.TIER_SYCHRONIZATION,
+			Orchestrator.TIER_STOP_OVERRIDE_FILENAME,
+			Orchestrator.TIER_STOP_OS_TYPE,
+			Orchestrator.INTER_TIER_ORCHESTRATION_DELAY
+		]
+
 		#
 		###
 
@@ -152,21 +181,18 @@ class Orchestrator(object):
 		except ClientError as e:
 			self.logger.error('lookupWorkloadSpecification()' + e.response['Error']['Message'])
 		else:
-			# Get the item from the result
+			# Get the dynamoDB Item from the result
 			resultItem=dynamodbItem['Item']
 			
 			for attributeName in resultItem:
-				#print "AttributeName: ", attributeName
-				attributeValue=resultItem[attributeName].values()[0]
-				self.logger.info('Workload Attribute [%s maps to %s]' % (attributeName, attributeValue))
-				#print "AttributeValue: ", attributeValue + '\n'
+				# First, validate the attribute specified is supported by this code
+				if( attributeName in self.workloadSpecificationValidAttributeList ):
+					attributeValue=resultItem[attributeName].values()[0]
+					self.logger.info('Workload Attribute [%s maps to %s]' % (attributeName, attributeValue))
+					self.workloadSpecificationDict[attributeName]=attributeValue
+				else:
+					self.logger.warning('lookupWorkloadSpecification() invalid dynamoDB attribute specified ->'+str(attributeName)+'<- will be ignored')
 
-				self.workloadSpecificationDict[attributeName]=attributeValue
-
-			#self.logSpecDict('lookupWorkloadSpecification', self.workloadSpecificationDict, Orchestrator.LOG_LEVEL_INFO )
-			#
-			#self.processItemJSON(resultItem)
-			#
 
 	def lookupTierSpecs(self, partitionTargetValue):
 		'''
@@ -180,33 +206,38 @@ class Orchestrator(object):
 				ConsistentRead=False,
 				ReturnConsumedCapacity="TOTAL",
 			)
-			#print dynamodbItem
 		except ClientError as e:
 			self.logger.error('lookupTierSpecs()' + e.response['Error']['Message'])
 		else:
 			# Get the items from the result
 			resultItems=dynamodbItem['Items']
-			self.logger.debug(resultItems)
 
-			# Create a Dictionary that stores the attributes and attributeValues associated with Tiers
-			for attribute in resultItems:
+			# Create a Dictionary that stores the currTier and currTier associated with Tiers
+			for currTier in resultItems:
+				self.logger.info('DynamoDB Query for Tier->'+ currTier[Orchestrator.TIER_NAME])
 
-				#self.tierSpecDict[attribute['TierTagValue']]={Orchestrator.TIER_STOP : attribute[Orchestrator.TIER_STOP], Orchestrator.TIER_START : attribute[Orchestrator.TIER_START]}
+				# First, validate the currTier attributes specified is the dynamoDB table are supported by this code
+				tierKeys= currTier.keys()
+				for k,v in currTier[ Orchestrator.TIER_STOP ].iteritems():
+					tierKeys.append(k)
+				for k,v in currTier[ Orchestrator.TIER_START ].iteritems():
+					tierKeys.append(k)
+
+				setDiff = set(tierKeys).difference(self.tierSpecificationValidAttributeList)
+				if( setDiff ):
+					for badAttrKey in setDiff:
+						self.logger.warning('lookupWorkloadSpecification() invalid dynamoDB attribute specified ->'+str(badAttrKey)+'<- will be ignored')
+
 				# Pull out the Dictionaries for each of the below. 
 				# Result is a key, and a dictionary
-				self.tierSpecDict[ attribute[Orchestrator.TIER_NAME] ] = {
-					Orchestrator.TIER_STOP : attribute[ Orchestrator.TIER_STOP ], 
-					Orchestrator.TIER_START : attribute[ Orchestrator.TIER_START ]
+				self.tierSpecDict[ currTier[Orchestrator.TIER_NAME] ] = {
+					Orchestrator.TIER_STOP : currTier[ Orchestrator.TIER_STOP ], 
+					Orchestrator.TIER_START : currTier[ Orchestrator.TIER_START ]
 				}
-
-				#self.logger.info('Tier %s:' % attribute[ Orchestrator.TIER_NAME ])
-				self.logSpecDict('lookupTierSpecs', attribute, Orchestrator.LOG_LEVEL_DEBUG )
-				# for key, value in attribute.iteritems():
-				# 	self.logger.info('%s contains %s' % (key, value))
-
+				#self.logSpecDict('lookupTierSpecs', currTier, Orchestrator.LOG_LEVEL_DEBUG )
 
 			# Log the constructed Tier Spec Dictionary
-			self.logSpecDict('lookupTierSpecs', self.tierSpecDict, Orchestrator.LOG_LEVEL_INFO )
+			#self.logSpecDict('lookupTierSpecs', self.tierSpecDict, Orchestrator.LOG_LEVEL_INFO )
 
 	def sequenceTiers(self, tierAction):
 		# Using the Tier Spec Dictionary, construct a simple List to order the sequence of Tier Processing
@@ -407,7 +438,7 @@ class Orchestrator(object):
 
 			for currTier in self.sequencedTiersList:
 			
-				self.logger.info('\nOrchestrate() Stopping Tier: ' + currTier)
+				self.logger.info('Orchestrate() Stopping Tier: ' + currTier)
 			
 				# Stop the next tier in the sequence
 				self.stopATier(currTier)
@@ -420,7 +451,7 @@ class Orchestrator(object):
 			
 			for currTier in self.sequencedTiersList:
 			
-				self.logger.info('\nOrchestrate() Starting Tier: ' + currTier)
+				self.logger.info('Orchestrate() Starting Tier: ' + currTier)
 			
 				# Start the next tier in the sequence
 				self.startATier(currTier)
@@ -437,7 +468,7 @@ class Orchestrator(object):
 		self.finishTime = datetime.datetime.now().replace(microsecond=0)
 
 		self.logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-		self.logger.info('++ Completed processing for workload ->' + self.partitionTargetValue +'<- in ' + str(self.finishTime - self.startTime) + ' seconds ++')
+		self.logger.info('++ Completed processing for workload ->' + self.partitionTargetValue +'<- in ' + str(self.finishTime - self.startTime) + ' seconds')
 		self.logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 	
 	def makeSNSTopicSubjectLine(self):
