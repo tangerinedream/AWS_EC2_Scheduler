@@ -183,16 +183,23 @@ class Orchestrator(object):
 		else:
 			# Get the dynamoDB Item from the result
 			resultItem=dynamodbItem['Item']
-			
+
+		
 			for attributeName in resultItem:
-				# First, validate the attribute specified is supported by this code
+				# Validate the attributes entered into DynamoDB are valid.  If not, spit out individual warning messages
 				if( attributeName in self.workloadSpecificationValidAttributeList ):
 					attributeValue=resultItem[attributeName].values()[0]
 					self.logger.info('Workload Attribute [%s maps to %s]' % (attributeName, attributeValue))
 					self.workloadSpecificationDict[attributeName]=attributeValue
 				else:
-					self.logger.warning('lookupWorkloadSpecification() invalid dynamoDB attribute specified ->'+str(attributeName)+'<- will be ignored')
+					self.logger.warning('Invalid dynamoDB attribute specified->'+str(attributeName)+'<- will be ignored')
 
+
+	def recursiveFindKeys(self, sourceDict, resList):
+		for k,v in sourceDict.iteritems():
+			resList.append(k)
+			if( isinstance(v, dict) ):
+				self.recursiveFindKeys(v, resList)
 
 	def lookupTierSpecs(self, partitionTargetValue):
 		'''
@@ -216,17 +223,12 @@ class Orchestrator(object):
 			for currTier in resultItems:
 				self.logger.info('DynamoDB Query for Tier->'+ currTier[Orchestrator.TIER_NAME])
 
-				# First, validate the currTier attributes specified is the dynamoDB table are supported by this code
-				tierKeys= currTier.keys()
-				for k,v in currTier[ Orchestrator.TIER_STOP ].iteritems():
-					tierKeys.append(k)
-				for k,v in currTier[ Orchestrator.TIER_START ].iteritems():
-					tierKeys.append(k)
-
+				tierKeys=[]
+				self.recursiveFindKeys(currTier, tierKeys)
 				setDiff = set(tierKeys).difference(self.tierSpecificationValidAttributeList)
 				if( setDiff ):
 					for badAttrKey in setDiff:
-						self.logger.warning('lookupWorkloadSpecification() invalid dynamoDB attribute specified ->'+str(badAttrKey)+'<- will be ignored')
+						self.logger.warning('Invalid dynamoDB attribute specified->'+str(badAttrKey)+'<- will be ignored')
 
 				# Pull out the Dictionaries for each of the below. 
 				# Result is a key, and a dictionary
