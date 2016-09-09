@@ -568,6 +568,9 @@ class Orchestrator(object):
 		self.logger = logging.getLogger('Orchestrator')  #The Module Name
 
 		# Set logging level
+		loggingLevelSelected = logging.INFO
+
+		# Set logging level
 		if( loglevel == 'critical' ):
 			loggingLevelSelected=logging.CRITICAL
 		elif( loglevel == 'error' ):
@@ -583,27 +586,18 @@ class Orchestrator(object):
 
 		filenameVal='Orchestrator_' + self.partitionTargetValue + '.log' 
 
-		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s\n', 
-			filename=filenameVal, 
-			level=loggingLevelSelected)
+		log_formatter = logging.Formatter('[%(asctime)s][%(levelname)s][%(funcName)s()][%(lineno)d]%(message)s')
 
-
-		# Add the rotating file handler 
-		
+		# Add the rotating file handler
 		handler = logging.handlers.RotatingFileHandler(
-			filename=filenameVal,  
-            mode='a',
-            maxBytes=1024*1024, 
-            backupCount=30)
+			filename=filenameVal,
+			mode='a',
+			maxBytes=128 * 1024,
+			backupCount=30)
+		handler.setFormatter(log_formatter)
 
 		self.logger.addHandler(handler)
-
-		
-		# Setup the Handlers
-		# create console handler and set level to debug
-		consoleHandler = logging.StreamHandler()
-		consoleHandler.setLevel(logging.INFO)
-		self.logger.addHandler(consoleHandler)
+		self.logger.setLevel(loggingLevelSelected)
 
 	def runTestCases(self):
 		self.logger.info('Executing runTestCases()')
