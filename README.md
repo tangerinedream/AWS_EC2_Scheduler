@@ -133,6 +133,11 @@ The workload specification contains tier independent configuration of the worklo
 <dt>WorkloadFilterTagName</dt>
 <dd>:  The name of the tag *key* (on the instance) that will be used to group the unique members of this workload.  In the example DynamoDB Table, "Environment" is the tag key. </dd>
 
+<dl>
+<dt>DisableAllSchedulingActions</dt>
+<dd>:  When this attribute is present in the Workload Table and has a string value of '1', <b>no</b> processing will occur across the entire workload.  This attribute is a <b>global override</b> and results in no actions being taken. Any value other than a string of '1', will be ignored and processing will continue as if the attribute was not even present. This attribute is <b>not</b> required</dd>
+
+
 <dt>WorkloadFilterTagValue</dt>
 <dd>: The tag *value* identifying the unique set of members within the EnvFilterTagName. In the example DynamoDB Table, "ENV001" is the tag value</dd>
 

@@ -32,6 +32,9 @@ class Orchestrator(object):
 
 	WORKLOAD_SNS_TOPIC_NAME='SNSTopicName'
 
+	WORKLOAD_KILL_SWITCH="DisableAllSchedulingActions"
+	WORKLOAD_KILL_SWITCH_TRUE="1"
+
 
 
 	TIER_FILTER_TAG_KEY='TierFilterTagName'
@@ -87,6 +90,7 @@ class Orchestrator(object):
 			Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME,
 			Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME,
 			Orchestrator.WORKLOAD_SNS_TOPIC_NAME,
+			Orchestrator.WORKLOAD_KILL_SWITCH,
 			Orchestrator.TIER_FILTER_TAG_KEY
 		]
 
@@ -411,6 +415,45 @@ class Orchestrator(object):
 		
 
 		return targetInstanceColl
+
+	def makeSNSTopic(self):
+
+		if (self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]):
+
+			# Make or retrieve the SNS Topic setup.  Method is Idempotent
+			try:
+				self.snsTopic = self.snsTopicR.create_topic( Name=self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME] )
+				self.snsTopicSubjectLine = self.makeSNSTopicSubjectLine()
+
+			except Exception as e:
+				self.logger.error('orchestrate() - creating SNS Topic ' + str(e) )
+				self.snsNotConfigured=True
+		else:
+			self.snsNotConfigured=True
+
+	def publishSNSTopic(self, subject, message):
+		try:
+			self.snsTopic.publish(
+				Subject=subject,
+				Message=message,
+			)
+
+		except Exception as e:
+			self.logger.error('publishSNSTopicMessage() ' + str(e) )
+
+	def isKillSwitch(self):
+
+		res = False
+		if( Orchestrator.WORKLOAD_KILL_SWITCH in self.workloadSpecificationDict ):
+
+			switchValue = self.workloadSpecificationDict[Orchestrator.WORKLOAD_KILL_SWITCH]
+
+			if( switchValue == Orchestrator.WORKLOAD_KILL_SWITCH_TRUE ):
+				self.logger.warning('Kill Switch found.  All scheduling actions on the workload will be bypassed')
+				res = True
+
+		return( res )
+
 	
 	def orchestrate(self, action ):
 		'''
@@ -420,51 +463,48 @@ class Orchestrator(object):
 		3) Log
 		'''
 
-		if( action == Orchestrator.ACTION_STOP ):
+		self.makeSNSTopic()
 
-			# Sequence the tiers per the STOP order
-			self.sequenceTiers(Orchestrator.TIER_STOP)
+		killSwitch = self.isKillSwitch()
 
-			if (self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]):
+		if( killSwitch ):
+			bodyMsg = '%s: Kill Switch Enabled.   All scheduling actions on the workload will be bypassed.' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE]
+			self.publishSNSTopic(self.snsTopicSubjectLine, bodyMsg)
 
-				# Make or retrieve the SNS Topic setup.  Method is Idempotent
-				try:
-					self.snsTopic = self.snsTopicR.create_topic( Name=self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME] )
-					self.snsTopicSubjectLine = self.makeSNSTopicSubjectLine()
-
-				except Exception as e:
-					self.logger.error('orchestrate() - creating SNS Topic ' + str(e) )
-					self.snsNotConfigured=True
-			else:
-				self.snsNotConfigured=True
-
-			for currTier in self.sequencedTiersList:
-			
-				self.logger.info('Orchestrate() Stopping Tier: ' + currTier)
-			
-				# Stop the next tier in the sequence
-				self.stopATier(currTier)
-				
-
-		elif( action == Orchestrator.ACTION_START ): 
-			
-			# Sequence the tiers per the START order
-			self.sequenceTiers(Orchestrator.TIER_START)
-			
-			for currTier in self.sequencedTiersList:
-			
-				self.logger.info('Orchestrate() Starting Tier: ' + currTier)
-			
-				# Start the next tier in the sequence
-				self.startATier(currTier)
-
-		elif( action not in self.validActionNames ):
-			
-			self.logger.warning('Action requested %s not a valid choice of ', self.validActionNames)
-		
 		else:
-		
-			self.logger.warning('Action requested %s is not yet implemented. No action taken', action)	
+
+			if( action == Orchestrator.ACTION_STOP ):
+
+				# Sequence the tiers per the STOP order
+				self.sequenceTiers(Orchestrator.TIER_STOP)
+
+				for currTier in self.sequencedTiersList:
+				
+					self.logger.info('Orchestrate() Stopping Tier: ' + currTier)
+				
+					# Stop the next tier in the sequence
+					self.stopATier(currTier)
+					
+
+			elif( action == Orchestrator.ACTION_START ): 
+				
+				# Sequence the tiers per the START order
+				self.sequenceTiers(Orchestrator.TIER_START)
+				
+				for currTier in self.sequencedTiersList:
+				
+					self.logger.info('Orchestrate() Starting Tier: ' + currTier)
+				
+					# Start the next tier in the sequence
+					self.startATier(currTier)
+
+			elif( action not in self.validActionNames ):
+				
+				self.logger.warning('Action requested %s not a valid choice of ', self.validActionNames)
+			
+			else:
+			
+				self.logger.warning('Action requested %s is not yet implemented. No action taken', action)	
 
 		# capture completion time
 		self.finishTime = datetime.datetime.now().replace(microsecond=0)
