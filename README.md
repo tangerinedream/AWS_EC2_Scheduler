@@ -166,6 +166,7 @@ The workload specification contains tier independent configuration of the worklo
 #### JSON: WorkloadSpecification 
 ```json
 {
+  "DisableAllSchedulingActions": "0",
   "WorkloadFilterTagName": "Environment",
   "WorkloadFilterTagValue": "ENV001",
   "WorkloadRegion": "us-west-2",
