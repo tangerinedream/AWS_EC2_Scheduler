@@ -52,7 +52,7 @@ class SSMDelegate(object):
 	SSM_COMMAND_ID = 'CommandId'
 	
 
-	def __init__(self, instanceId, bucketName, keyPrefixName, fileURI, osType, ddbRegion, workloadRegion='us-west-2'):
+	def __init__(self, instanceId, bucketName, keyPrefixName, fileURI, osType, ddbRegion, logger, workloadRegion='us-west-2'):
 
 		self.instanceId=instanceId
 
@@ -90,7 +90,8 @@ class SSMDelegate(object):
 
 		self.s3 = boto3.client('s3', region_name=self.workloadRegion)
 
-		self.initLogging()
+		self.logger = logger
+		# self.initLogging()
 		
 
 
@@ -350,11 +351,12 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 		return( status )
 
 	def initLogging(self):
+		pass
 		# Setup the Logger
-		loggerNameStr='SSMDelegate'
-		self.logger = logging.getLogger(loggerNameStr)  #The Module Name
-		self.logger.setLevel(logging.INFO)
-		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename=loggerNameStr + '.log', filemode='w', level=logging.INFO)
+		# loggerNameStr='SSMDelegate'
+		# self.logger = logging.getLogger(loggerNameStr)  #The Module Name
+		# self.logger.setLevel(logging.INFO)
+		# logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename=loggerNameStr + '.log', filemode='w', level=logging.INFO)
 
 	def runTestCases(self):
 		#doc = self.makeSSMRunDocument("/tmp/override")
@@ -366,7 +368,13 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 			self.logger.info('SSMDelegate runTestCases() instance inaccessible, bypassing')
 
 if __name__ == "__main__":
-	# Issue could be the region
-	ssm = SSMDelegate('i-074e5f7e93fdaaa50', 'com.gman.ssm', 'ssmRemoteComandResults', 'us-west-2')
+
+	loggerNameStr='SSMDelegate'
+	logger = logging.getLogger(loggerNameStr)  #The Module Name
+	logger.setLevel(logging.INFO)
+	logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename=loggerNameStr + '.log', filemode='w', level=logging.INFO)
+
+
+	ssm = SSMDelegate('i-074e5f7e93fdaaa50', 'com.gman.ssm', 'ssmRemoteComandResults', logger, 'us-west-2')
 	ssm.runTestCases()
 

@@ -10,12 +10,13 @@ class Worker(object):
 	SNS_SUBJECT_PREFIX_WARNING="Warning:"
 	SNS_SUBJECT_PREFIX_INFORMATIONAL="Info:"
 
-	def __init__(self, workloadRegion, instance, dryRunFlag):
+	def __init__(self, workloadRegion, instance, logger, dryRunFlag):
 
 		self.workloadRegion=workloadRegion
 		self.ec2Resource = boto3.resource('ec2', region_name=self.workloadRegion)
 		self.instance=instance
 		self.dryRunFlag=dryRunFlag
+		self.logger = logger
 
 		self.instanceStateMap = {
 			"pending" : 0, 
@@ -25,13 +26,14 @@ class Worker(object):
 			"stopping" : 64,
 			"stopped" : 80
 		}
-		self.initLogging()  
+		# self.initLogging()
 
 	def initLogging(self):
+		pass
 		# Setup the Logger
-		self.logger = logging.getLogger('Worker')  #The Module Name
-		self.logger.setLevel(logging.INFO)
-		logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename='Worker' + '.log', filemode='w', level=logging.INFO)
+		# self.logger = logging.getLogger('Worker')  #The Module Name
+		# self.logger.setLevel(logging.INFO)
+		# logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename='Worker' + '.log', filemode='w', level=logging.INFO)
 		
 		###
 		#Currently, this adds another logger everytime a subclass instantiated.
@@ -48,8 +50,8 @@ class Worker(object):
 
 
 class StartWorker(Worker):
-	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag):
-		super(StartWorker, self).__init__(workloadRegion, instance, dryRunFlag)
+	def __init__(self, ddbRegion, workloadRegion, instance, logger, dryRunFlag):
+		super(StartWorker, self).__init__(workloadRegion, instance, logger, dryRunFlag)
 
 		self.ddbRegion=ddbRegion
 
@@ -72,8 +74,8 @@ class StartWorker(Worker):
 
 
 class StopWorker(Worker):
-	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, dryRunFlag):
-		super(StopWorker, self).__init__(workloadRegion, instance, dryRunFlag)
+	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag):
+		super(StopWorker, self).__init__(workloadRegion, instance, logger, dryRunFlag)
 		
 		self.ddbRegion=ddbRegion
 

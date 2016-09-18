@@ -543,7 +543,7 @@ class Orchestrator(object):
 		#region=self.workloadSpecificationDict[self.WORKLOAD_SPEC_REGION_KEY]
 		
 		for currInstance in instancesToStopList:
-			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.dryRunFlag) 
+			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.logger, self.dryRunFlag)
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
 				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME], 
@@ -585,7 +585,7 @@ class Orchestrator(object):
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
 			self.logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.logger, self.dryRunFlag)
 			startWorker.execute()
 
 		# Delay to be introduced prior to allowing the next tier to be actioned.
@@ -626,7 +626,7 @@ class Orchestrator(object):
 
 		filenameVal='Orchestrator_' + self.partitionTargetValue + '.log' 
 
-		log_formatter = logging.Formatter('[%(asctime)s][%(levelname)s][%(funcName)s()][%(lineno)d]%(message)s')
+		log_formatter = logging.Formatter('[%(asctime)s][%(levelname)s][%(module)s:%(funcName)s()][%(lineno)d]%(message)s')
 
 		# Add the rotating file handler
 		handler = logging.handlers.RotatingFileHandler(
