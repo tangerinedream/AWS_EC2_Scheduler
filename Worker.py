@@ -149,7 +149,7 @@ class StopWorker(Worker):
 
 
 		# Create the delegate
-		ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, overrideFileName, osType, self.ddbRegion, self.workloadRegion)
+		ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, overrideFileName, osType, self.ddbRegion, self.logger, self.workloadRegion)
 
 
 		# Very first thing to check is whether SSM is going to write the output to the S3 bucket.  

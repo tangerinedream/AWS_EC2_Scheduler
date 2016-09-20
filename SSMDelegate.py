@@ -286,7 +286,7 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 					self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
 			
 			except Exception as e:
-				self.logger.error('isS3BucketInWorkloadRegion() '+ e.response['Error']['Message'])
+				self.logger.error('isS3BucketInWorkloadRegion() '+ str(e) )
 				response = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
 
 		self.S3BucketInWorkloadRegion=result
