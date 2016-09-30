@@ -63,6 +63,10 @@ class Orchestrator(object):
 	LOG_LEVEL_DEBUG='debug'
 
 	def __init__(self, partitionTargetValue, loglevel, dynamoDBRegion, dryRun=False):
+
+		self.partitionTargetValue=partitionTargetValue  # must be set prior to invoking initlogging()
+		self.initLogging(loglevel)
+
 		# default to us-west-2
 		self.dynamoDBRegion=dynamoDBRegion 
 		self.workloadRegion='us-west-2'  #default
@@ -73,12 +77,17 @@ class Orchestrator(object):
 		###
 		# DynamoDB Table Related
 		#
-		self.dynDBC = boto3.client('dynamodb', region_name=self.dynamoDBRegion)
+		try:
+			self.dynDBC = boto3.client('dynamodb', region_name=self.dynamoDBRegion)
+		except Exception as e:
+			msg = 'Orchestrator::__init__() Exception obtaining botot3 dynamodb client in region %s -->' % self.workloadRegion
+			self.logger.error(msg + str(e))
+
 
 		# Directive DynamoDB Table Related
 		self.workloadSpecificationTableName=Orchestrator.WORKLOAD_SPEC_TABLE_NAME
 		self.workloadSpecificationPartitionKey=Orchestrator.WORKLOAD_SPEC_PARTITION_KEY
-		self.partitionTargetValue=partitionTargetValue
+
 
 		# Create a List of valid dynamoDB attributes to address user typos in dynamoDB table
 		self.workloadSpecificationValidAttributeList = [
@@ -99,8 +108,12 @@ class Orchestrator(object):
 		self.tierSpecPartitionKey=Orchestrator.TIER_SPEC_PARTITION_KEY # Same as workloadSpecificationPartitionKey
 
 		# Table requires the DynamoDB.Resource
-		self.dynDBR = boto3.resource('dynamodb', region_name=self.dynamoDBRegion)
-		self.tierSpecTable = self.dynDBR.Table(self.tierSpecTableName)
+		try:
+			self.dynDBR = boto3.resource('dynamodb', region_name=self.dynamoDBRegion)
+			self.tierSpecTable = self.dynDBR.Table(self.tierSpecTableName)
+		except Exception as e:
+			msg = 'Orchestrator::__init__() Exception obtaining botot3 dynamodb resource in region %s -->' % self.workloadRegion
+			self.logger.error(msg + str(e))
 
 		# Create a List of valid dynamoDB attributes to address user typos in dynamoDB table
 		self.tierSpecificationValidAttributeList = [
@@ -151,7 +164,7 @@ class Orchestrator(object):
 			80: "stopped"
 		}
 
-		self.initLogging(loglevel)
+
 
 	def initializeState(self):
 
@@ -165,8 +178,13 @@ class Orchestrator(object):
 		# DynamodDB configuration
 		self.workloadRegion=self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_REGION_KEY]
 
-		# Set the Workload Region
-		self.ec2R = boto3.resource('ec2', region_name=self.workloadRegion)
+		# We provision the boto3 resource here because we need to have determined the Workload Region as a dependency,
+		# which is done just above in this method
+		try:
+			self.ec2R = boto3.resource('ec2', region_name=self.workloadRegion)
+		except Exception as e:
+			msg = 'Orchestrator::initializeState() Exception obtaining botot3 ec2 resource in region %s -->' % self.workloadRegion
+			self.logger.error(msg + str(e))
 
 		# Grab tier specific workload information from DynamoDB
 		self.lookupTierSpecs(self.partitionTargetValue)
@@ -218,7 +236,7 @@ class Orchestrator(object):
 				ReturnConsumedCapacity="TOTAL",
 			)
 		except ClientError as e:
-			self.logger.error('lookupTierSpecs()' + e.response['Error']['Message'])
+			self.logger.error('Exception encountered in lookupTierSpecs() -->' + str(e))
 		else:
 			# Get the items from the result
 			resultItems=dynamodbItem['Items']
@@ -407,12 +425,18 @@ class Orchestrator(object):
 
 		# Filter the instances
 		# NOTE: Only instances within the specified region are returned
-		targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
+		targetInstanceColl = {}
+		try:
+			targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
 
-		self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
-		for curr in targetInstanceColl:
-			self.logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
-		
+			self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
+			for curr in targetInstanceColl:
+				self.logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
+
+		except Exception as e:
+			msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->'
+			self.logger.error(msg + str(e))
+
 
 		return targetInstanceColl
 
@@ -517,7 +541,6 @@ class Orchestrator(object):
 		res = 'AWS_EC2_Scheduler Notification:  Workload==>' + self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
 		return( res )	    
 
-
 	def stopATier(self, tierName):
 		'''
 		Given a Tier,
@@ -531,8 +554,9 @@ class Orchestrator(object):
 		
 		# Find the running instances of this tier to stop
 		running=self.instanceStateMap[16]
+
 		instancesToStopList = self.lookupInstancesByFilter(
-			running, 
+			running,
 			tierName
 		)
 
@@ -541,12 +565,12 @@ class Orchestrator(object):
 
 		# Grab the EC2 region (not DynamodDB region) for the worker to make API calls
 		#region=self.workloadSpecificationDict[self.WORKLOAD_SPEC_REGION_KEY]
-		
+
 		for currInstance in instancesToStopList:
 			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.logger, self.dryRunFlag)
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
-				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME], 
+				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME],
 				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME],
 				self.getTierStopOverrideFilename(tierName),
 				self.getTierOperatingSystemType(tierName)
@@ -571,11 +595,11 @@ class Orchestrator(object):
 
 		# Find the running instances of this tier to stop
 		instancesToStartList = self.lookupInstancesByFilter(
-			stopped, 
+			stopped,
 			tierName
 		)
 
-		# Determine if operations on the Tier should be synchronized or not, 
+		# Determine if operations on the Tier should be synchronized or not,
 		# currently this feature is not implemented for Starting A Tier
 		#syncFlag=self.isTierSynchronized(tierName, Orchestrator.TIER_START)
 
@@ -585,7 +609,7 @@ class Orchestrator(object):
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
 			self.logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.logger, self.dryRunFlag)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.logger, self.dryRunFlag)
 			startWorker.execute()
 
 		# Delay to be introduced prior to allowing the next tier to be actioned.
@@ -593,8 +617,6 @@ class Orchestrator(object):
 		time.sleep(self.getInterTierOrchestrationDelay(tierName, Orchestrator.TIER_START))
 
 		self.logger.debug('startATier() completed for tier %s' % tierName)
-
-
 
 	def postEvent(self):
 		# If SNS flag enabled and SNS setup, also send to SNS
@@ -633,7 +655,7 @@ class Orchestrator(object):
 			filename=filenameVal,
 			mode='a',
 			maxBytes=128 * 1024,
-			backupCount=30)
+			backupCount=10)
 		handler.setFormatter(log_formatter)
 
 		self.logger.addHandler(handler)

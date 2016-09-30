@@ -9,12 +9,12 @@ from distutils.util import strtobool
 __author__ = "Gary Silverman"
 
 class SSMDelegate(object):
-	### 
-	# 
+	###
+	#
 	# Class Variables
 	#
 	###
-	
+
 	# Use the following command to view a description of the SSM JSON document.
 	# aws ssm describe-document --name "AWS-RunShellScript" --query "[Document.Name,Document.Description]"
 
@@ -25,13 +25,13 @@ class SSMDelegate(object):
 	# aws ssm send-command --instance-ids "instance ID" --document-name "AWS-RunShellScript" --comment "IP config" --parameters commands=ifconfig --output text
 
 
-	# aws ssm send-command 
-	# 	--instance-ids "i-06bae75b40e7539e3" 
-	# 	--document-name "AWS-RunShellScript" 
-	# 	--comment "Test stopping 'Tomcat' service" 
-	# 	--parameters '{"commands":["service tomcat7 stop"],"executionTimeout":["3600"]}' 
-	# 	--timeout-seconds 600 
-	# 	--region us-east-1 
+	# aws ssm send-command
+	# 	--instance-ids "i-06bae75b40e7539e3"
+	# 	--document-name "AWS-RunShellScript"
+	# 	--comment "Test stopping 'Tomcat' service"
+	# 	--parameters '{"commands":["service tomcat7 stop"],"executionTimeout":["3600"]}'
+	# 	--timeout-seconds 600
+	# 	--region us-east-1
 	# 	--query "Command.CommandId"
 
 	DECISION_STOP_INSTANCE='Stop'
@@ -50,7 +50,7 @@ class SSMDelegate(object):
 	OS_TYPE_WINDOWS = 'Windows'
 
 	SSM_COMMAND_ID = 'CommandId'
-	
+
 
 	def __init__(self, instanceId, bucketName, keyPrefixName, fileURI, osType, ddbRegion, logger, workloadRegion='us-west-2'):
 
@@ -59,8 +59,14 @@ class SSMDelegate(object):
 		self.ddbRegion=ddbRegion
 
 		self.workloadRegion=workloadRegion
-		
-		self.ssm = boto3.client('ssm', region_name=self.workloadRegion)
+
+		self.logger = logger
+
+		try:
+			self.ssm = boto3.client('ssm', region_name=self.workloadRegion)
+		except Exception as e:
+			msg = 'SSMDelegate::__init__() Exception obtaining botot3 ssm resource in region %s -->' % workloadRegion
+			self.logger.error(msg + str(e))
 
 		self.ssmDocumentName=''
 
@@ -69,11 +75,11 @@ class SSMDelegate(object):
 		# The duration to sleep while awaiting results from the SSM Command executing
 		self.retrieveSSMResultSleepDuration=10
 
-		# Max wait is 5 minutes (10 seconds * 12 = 120 seconds or 2 minutes)
-		self.getResultRetryCount = 12
+		# Max wait is 5 minutes (10 seconds * 18 = 180 seconds or 3 minutes)
+		self.getResultRetryCount = 18
 
 		self.S3BucketName=bucketName
-		    
+
 		self.S3KeyPrefixName=keyPrefixName
 
 		# The unique identifier of the ssm command
@@ -88,12 +94,11 @@ class SSMDelegate(object):
 		# At the time of writing, SSM only outputs to an S3 bucket in the same region as the target instance.
 		self.S3BucketInWorkloadRegion = SSMDelegate.S3_BUCKET_LOCATION_NOT_YET_DETERMINED
 
-		self.s3 = boto3.client('s3', region_name=self.workloadRegion)
-
-		self.logger = logger
-		# self.initLogging()
-		
-
+		try:
+			self.s3 = boto3.client('s3', region_name=self.workloadRegion)
+		except Exception as e:
+			msg = 'SSMDelegate::__init__() Exception obtaining botot3 s3 resource in region %s -->' % workloadRegion
+			self.logger.error(msg + str(e))
 
 	def sendSSMCommand(self):
 
@@ -104,7 +109,7 @@ class SSMDelegate(object):
 			defaultDir='C:'
 		else: #default to OS_TYPE_LINUX
 			self.ssmDocumentName='AWS-RunShellScript'
-			testOverrideFileCommand='if [ -e ' + self.fileURI + ' ]; then echo \"'+ self.SCRIPT_NO_ACTION +'\"; else echo \"'+ self.SCRIPT_STOP_INSTANCE +'\"; fi'		
+			testOverrideFileCommand='if [ -e ' + self.fileURI + ' ]; then echo \"'+ self.SCRIPT_NO_ACTION +'\"; else echo \"'+ self.SCRIPT_STOP_INSTANCE +'\"; fi'
 			defaultDir='/tmp'
 
 		try:
@@ -112,24 +117,24 @@ class SSMDelegate(object):
 			# the TimeoutSeconds is the time to reach the instance, not execution time to run
 			#   the commands within the instance once reached.
 			# For more details: Open the AWS-RunShellScript document within the management
-			#   console, where you can inspect the actual document under the 'Content' tab. 
+			#   console, where you can inspect the actual document under the 'Content' tab.
 			response = self.ssm.send_command(
-			    InstanceIds=[
-			        self.instanceId,
-			    ],
-			    Parameters={
-			        'commands': [
-			            testOverrideFileCommand,
-			        ],
-			        'workingDirectory' : [
-			        	defaultDir,
-			        ],
-			    },
-			    DocumentName=self.ssmDocumentName,
-			    TimeoutSeconds=self.connectionTimeout,
-			    OutputS3BucketName=self.S3BucketName,
-			    OutputS3KeyPrefix=self.S3KeyPrefixName,
-			    Comment='Send command to test if override file exists on instance'
+				InstanceIds=[
+					self.instanceId,
+				],
+				Parameters={
+					'commands': [
+						testOverrideFileCommand,
+					],
+					'workingDirectory' : [
+						defaultDir,
+					],
+				},
+				DocumentName=self.ssmDocumentName,
+				TimeoutSeconds=self.connectionTimeout,
+				OutputS3BucketName=self.S3BucketName,
+				OutputS3KeyPrefix=self.S3KeyPrefixName,
+				Comment='Send command to test if override file exists on instance'
 			)
 			# Results are in:
 			#   bucket->keyPrefix+region->commandId-->instanceId-->awsrunshellscript-->0.aws.runshellscript-->stdout
@@ -138,9 +143,9 @@ class SSMDelegate(object):
 			for key, value in response.iteritems():
 				self.logger.debug('ssm send_command response (key==%s, value==%s)' % (key, value))
 
-			self.logger.debug('SSMDelegate send_command() results :')	
+			self.logger.debug('SSMDelegate send_command() results :')
 			self.logger.debug('Operating System: ' + self.osType)
-			self.logger.debug('Command attempted: ' + testOverrideFileCommand)	
+			self.logger.debug('Command attempted: ' + testOverrideFileCommand)
 			self.logger.debug('CommandId:  ' + self.getAttributeFromSSMSendCommand(response, 'CommandId'))
 			self.logger.debug('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
 
@@ -160,54 +165,58 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 	def retrieveSSMResults(self, ssmResponse):
 
 		result = SSMDelegate.DECISION_NO_ACTION  # By default, we will not shut down the instance
-		
+
 		self.commandId = self.getAttributeFromSSMSendCommand(ssmResponse, SSMDelegate.SSM_COMMAND_ID)
 
 		# Do we have a commandId from the sendCommand response?
-		if self.commandId:		
+		if self.commandId:
 
-			# Let's try to get the response, and wait if it isn't ready
-			done=False
-			counter=0
-			while( (not done) and (counter < self.getResultRetryCount ) ):
-				response = self.ssm.list_commands(
-					CommandId=self.commandId,
-					InstanceId=self.instanceId
-				)
+			try:
 
-				#
-				self.logger.debug('SSMDelegate list_commands() results :')
-				for key, value in response.iteritems():
-					self.logger.debug('(key==%s, value==%s)' % (key, value))
-				
-				# pull out the status
-				res = self.getStatusFromSSMListCommands(response, self.commandId)
+				# Let's try to get the response, and wait if it isn't ready
+				done=False
+				counter=0
+				while( (not done) and (counter < self.getResultRetryCount ) ):
+					response = self.ssm.list_commands(
+						CommandId=self.commandId,
+						InstanceId=self.instanceId
+					)
 
-				# check to see if status is done
-				#    done mean status in 'Success'|'TimedOut'|'Cancelled'|'Failed'
-				if( res in ['Success', 'TimedOut', 'Cancelled', 'Failed'] ):
-					done=True
+					#
+					self.logger.debug('SSMDelegate list_commands() results :')
+					for key, value in response.iteritems():
+						self.logger.debug('(key==%s, value==%s)' % (key, value))
 
-					# Great, but is there a result to retrieve?
-					if( res == 'Success' ):
+					# pull out the status
+					res = self.getStatusFromSSMListCommands(response, self.commandId)
 
-						# Ok, let's go look it up in S3
-						# Due to cross platform treatment of text files, chomp everything that isn't alphanumeric
-						scriptRes = filter(str.isalnum, self.lookupS3Result())
+					# check to see if status is done
+					#    done mean status in 'Success'|'TimedOut'|'Cancelled'|'Failed'
+					if( res in ['Success', 'TimedOut', 'Cancelled', 'Failed'] ):
+						done=True
 
-						# If the string says Continue, then it's a go.  Otherwise, we won't stop it. 
-						if( scriptRes == SSMDelegate.SCRIPT_STOP_INSTANCE ):
-							result = SSMDelegate.DECISION_STOP_INSTANCE
+						# Great, but is there a result to retrieve?
+						if( res == 'Success' ):
+
+							# Ok, let's go look it up in S3
+							# Due to cross platform treatment of text files, chomp everything that isn't alphanumeric
+							scriptRes = filter(str.isalnum, self.lookupS3Result())
+
+							# If the string says Continue, then it's a go.  Otherwise, we won't stop it.
+							if( scriptRes == SSMDelegate.SCRIPT_STOP_INSTANCE ):
+								result = SSMDelegate.DECISION_STOP_INSTANCE
+						else:
+							# Wasn't Success, so let's output what it was
+							self.logger.warning('SSM response completed but not as "Success".  SSM result was ' + str(res) )
+
 					else:
-						# Wasn't Success, so let's output what it was
-						self.logger.warning('SSM response completed but not as "Success".  SSM result was ' + str(res) )
+						# So we aren't doing this forever
+						counter += 1
+						self.logger.info('SSMDelegate::retrieveSSMResults() Awaiting Completed Status. Sleep and retry #' + str(counter))
+						time.sleep(self.retrieveSSMResultSleepDuration)
 
-				else:
-					# So we aren't doing this forever
-					counter += 1
-					self.logger.info('SSMDelegate::retrieveSSMResults() Awaiting Completed Status. Sleep and retry #' + str(counter))
-					time.sleep(self.retrieveSSMResultSleepDuration)
-
+			except Exception as e:
+				self.logger.warning('Encountered an exception retrieving SSM Results -->' + str(e))
 
 		else:
 			self.logger.warning('Could not find CommandId in response for InstanceId: ' + self.instanceId)
@@ -223,7 +232,7 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 		elif( result == SSMDelegate.DECISION_NO_ACTION ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' has override file and will NOT be stopped')
 		else:
-			result == SSMDelegate.DECISION_NO_ACTION_UNEXPECTED_RESULT 
+			result == SSMDelegate.DECISION_NO_ACTION_UNEXPECTED_RESULT
 			self.logger.warning('InstanceId: ' + self.instanceId + ' unexpected SSM result ==>'+ result +'<==, or inaccessible instance.  Instance will NOT be stopped')
 
 		return( result )
@@ -231,7 +240,7 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 	def makeS3Key(self):
 		# bucketName/keyPrefixName+region/commandId/instance-id/awsrunShellScript/0.aws:runShellScript
 		delimiter='/'
-		
+
 		if( self.osType == SSMDelegate.OS_TYPE_WINDOWS ):
 			# Note: Do not prefix 'key' with leading slash
 			key= \
@@ -270,21 +279,21 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 					if( S3BucketLoc == self.workloadRegion ):
 						result = SSMDelegate.S3_BUCKET_IN_CORRECT_REGION
 						self.logger.debug('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
-					
+
 					elif( (S3BucketLoc == None) and ( self.workloadRegion == 'us-east-1' ) ):
 						result = SSMDelegate.S3_BUCKET_IN_CORRECT_REGION
 						self.logger.debug('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
-					
+
 					else:
 						result = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
 						self.logger.warning('The S3 bucket cannot be confirmed to be in the Workload Region. SSM will not log the results of commands to buckets outside of the instances region. As such, no instances will be stopped, since the SSM result checking for the override file cannot be determined.')
 						self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
-				
+
 				else:
 					result = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
 					self.logger.warning('The S3 bucket cannot be confirmed to be in the Workload Region. SSM will not log the results of commands to buckets outside of the instances region. As such, no instances will be stopped, since the SSM result checking for the override file cannot be determined.')
 					self.logger.warning('Bucket Region is %s Workload Region is %s ' % (S3BucketLoc, self.workloadRegion))
-			
+
 			except Exception as e:
 				self.logger.error('isS3BucketInWorkloadRegion() '+ str(e) )
 				response = SSMDelegate.S3_BUCKET_IN_WRONG_REGION
@@ -292,7 +301,7 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 		self.S3BucketInWorkloadRegion=result
 		return(result)
 
-		
+
 
 	def lookupS3Result(self):
 		content=''
@@ -301,62 +310,63 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 		# First, construct the location
 		key = self.makeS3Key()
 
-		# 
-		result = self.s3.get_object(
-			Bucket=self.S3BucketName,
-		    Key=key
-		)
+		try:
+			#
+			result = self.s3.get_object(
+				Bucket=self.S3BucketName,
+				Key=key
+			)
 
-		# Locate the Content in the response
-		if 'Body' in result:
-			stream = result['Body']
+			# Locate the Content in the response
+			if 'Body' in result:
+				stream = result['Body']
 
-			# Read the content
-			content = stream.read()
+				# Read the content
+				content = stream.read()
 
+		except Exception as e:
+			self.logger.warning('Could not lookup SSM results in S3.  Exception was -->' + str(3))
 
 		return(content)
 
 	def getAttributeFromSSMSendCommand(self, ssmResponse, attributeName):
 		result=''
 
-		if 'Command' in ssmResponse:			
-			commandDict = ssmResponse['Command']
-			if attributeName in commandDict:
-				result = commandDict[attributeName]			
-		
+		if ssmResponse:
+			if 'Command' in ssmResponse:
+				commandDict = ssmResponse['Command']
+				if attributeName in commandDict:
+					result = commandDict[attributeName]
+		else:
+			self.logger.warning('No ssmResponse retrieved.')
+
 		return(result)
 
 
 	def getStatusFromSSMListCommands(self, ssmResponse, commandId):
 		status=''
-		
-		if 'Commands' in ssmResponse:			
-			commandsList = ssmResponse['Commands']
 
-			# Find the correct result
-			for curr in commandsList:
+		if ssmResponse:
+			if 'Commands' in ssmResponse:
+				commandsList = ssmResponse['Commands']
 
-				# Is this a valid CommandList item?
-				if( 'CommandId' in curr and 'Status' in curr ):
-					currCommandId = curr['CommandId']
-					
-					# Did we get the right one?
-					if( currCommandId == commandId ):
-						status = curr['Status']
+				# Find the correct result
+				for curr in commandsList:
 
-						# We are done here
-						break
-		
+					# Is this a valid CommandList item?
+					if( 'CommandId' in curr and 'Status' in curr ):
+						currCommandId = curr['CommandId']
+
+						# Did we get the right one?
+						if( currCommandId == commandId ):
+							status = curr['Status']
+
+							# We are done here
+							break
+		else:
+			self.logger.warning('No ssmReponse provided to check')
+
 		return( status )
-
-	def initLogging(self):
-		pass
-		# Setup the Logger
-		# loggerNameStr='SSMDelegate'
-		# self.logger = logging.getLogger(loggerNameStr)  #The Module Name
-		# self.logger.setLevel(logging.INFO)
-		# logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename=loggerNameStr + '.log', filemode='w', level=logging.INFO)
 
 	def runTestCases(self):
 		#doc = self.makeSSMRunDocument("/tmp/override")

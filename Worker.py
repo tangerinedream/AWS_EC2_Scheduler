@@ -10,13 +10,16 @@ class Worker(object):
 	SNS_SUBJECT_PREFIX_WARNING="Warning:"
 	SNS_SUBJECT_PREFIX_INFORMATIONAL="Info:"
 
-	def __init__(self, workloadRegion, instance, logger, dryRunFlag):
+	def __init__(self, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag):
 
 		self.workloadRegion=workloadRegion
-		self.ec2Resource = boto3.resource('ec2', region_name=self.workloadRegion)
 		self.instance=instance
 		self.dryRunFlag=dryRunFlag
 		self.logger = logger
+
+		self.snsTopic = snsTopic
+		self.snsTopicSubject = snsTopicSubject
+		self.snsNotConfigured = snsNotConfigured
 
 		self.instanceStateMap = {
 			"pending" : 0, 
@@ -26,44 +29,48 @@ class Worker(object):
 			"stopping" : 64,
 			"stopped" : 80
 		}
-		# self.initLogging()
 
-	def initLogging(self):
-		pass
-		# Setup the Logger
-		# self.logger = logging.getLogger('Worker')  #The Module Name
-		# self.logger.setLevel(logging.INFO)
-		# logging.basicConfig(format='%(asctime)s:%(levelname)s:%(name)s==>%(message)s', filename='Worker' + '.log', filemode='w', level=logging.INFO)
-		
-		###
-		#Currently, this adds another logger everytime a subclass instantiated.
+		try:
+			self.ec2Resource = boto3.resource('ec2', region_name=self.workloadRegion)
+		except Exception as e:
+			msg = 'Worker::__init__() Exception obtaining botot3 ec2 resource in region %s -->' % workloadRegion
+			self.logger.error(msg + str(e))
 
-		# Setup the Handlers
-		# create console handler and set level to debug
-		# consoleHandler = logging.StreamHandler()
-		# consoleHandler.setLevel(logging.INFO)
-		# self.logger.addHandler(consoleHandler)
+	def publishSNSTopicMessage(self, subjectPrefix, theMessage, instance):
+		tagsMsg=''
+		if( instance is not None ):
+			for tag in instance.tags:
+				tagsMsg = tagsMsg + '\nTag {0}=={1}'.format( str(tag['Key']), str(tag['Value']) )
 
+		try:
+			self.snsTopic.publish(
+				Subject=self.snsTopicSubject + ':' + subjectPrefix,
+				Message=theMessage + tagsMsg,
+			)
 
+		except Exception as e:
+			self.logger.error('publishSNSTopicMessage() ' + str(e) )
 
-	''' probably add some convenience methods to update DynamoDB or Log Files with progress/status '''
 
 
 class StartWorker(Worker):
-	def __init__(self, ddbRegion, workloadRegion, instance, logger, dryRunFlag):
-		super(StartWorker, self).__init__(workloadRegion, instance, logger, dryRunFlag)
+	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag):
+		super(StartWorker, self).__init__(workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag)
 
 		self.ddbRegion=ddbRegion
 
 	def startInstance(self):
 
-		result=''
+		result='Instance not started'
 		if( self.dryRunFlag ):
 			self.logger.warning('DryRun Flag is set - instance will not be started')
 		else:
-			#EC2.Instance.start()
-			result=self.instance.start()
-		
+			try:
+				#EC2.Instance.start()
+				result=self.instance.start()
+			except Exception as e:
+				self.logger.warning('Worker:: instance.start() encountered an exception of -->' + str(e))
+
 		self.logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 
 	def execute(self):
@@ -75,29 +82,30 @@ class StartWorker(Worker):
 
 class StopWorker(Worker):
 	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag):
-		super(StopWorker, self).__init__(workloadRegion, instance, logger, dryRunFlag)
+		super(StopWorker, self).__init__(workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag)
 		
 		self.ddbRegion=ddbRegion
-
-		self.snsTopic = snsTopic
-		self.snsTopicSubject = snsTopicSubject
 
 		# MUST convert string False to boolean False
 		self.waitFlag=strtobool('False')
 		self.overrideFlag=strtobool('False')
-		self.snsNotConfigured=snsNotConfigured
-
 		
 	def stopInstance(self):
 
 		self.logger.debug('Worker::stopInstance() called')
-		result=''
+
+		result='Instance not Stopped'
 		
 		if( self.dryRunFlag ):
 			self.logger.warning('DryRun Flag is set - instance will not be stopped')
 		else:
-			#EC2.Instance.stop()
-			result=self.instance.stop()
+			try:
+				# EC2.Instance.stop()
+				result = self.instance.stop()
+			except Exception as e:
+				self.logger.warning('Worker:: instance.stop() encountered an exception of -->' + str(e))
+
+			self.logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
 
 		# If configured, wait for the stop to complete prior to returning
 		self.logger.debug('The bool value of self.waitFlag %s, is %s' % (self.waitFlag, bool(self.waitFlag)))
@@ -110,12 +118,16 @@ class StopWorker(Worker):
 			if( self.dryRunFlag ):			
 				self.logger.warning('DryRun Flag is set - waiter() will not be employed')
 			else:
-				# Need the Client to get the Waiter
-				ec2Client=self.ec2Resource.meta.client
-				waiter=ec2Client.get_waiter('instance_stopped')	
+				try:
+					# Need the Client to get the Waiter
+					ec2Client=self.ec2Resource.meta.client
+					waiter=ec2Client.get_waiter('instance_stopped')
 
-				# Waits for 40 15 second increments (e.g. up to 10 minutes)
-				waiter.wait( )
+					# Waits for 40 15 second increments (e.g. up to 10 minutes)
+					waiter.wait( )
+
+				except Exception as e:
+					self.logger.warning('Worker:: waiter block encountered an exception of -->' + str(e))
 
 		else:
 			self.logger.info(self.instance.id + ' Wait for Stop to complete was not requested')
@@ -214,20 +226,7 @@ class StopWorker(Worker):
 		
 		return( self.overrideFlag )
 
-	def publishSNSTopicMessage(self, subjectPrefix, theMessage, instance):
-		tagsMsg=''
-		if( instance is not None ):
-			for tag in instance.tags:
-				tagsMsg = tagsMsg + '\nTag {0}=={1}'.format( str(tag['Key']), str(tag['Value']) ) 
 
-		try:
-			self.snsTopic.publish(
-				Subject=self.snsTopicSubject + ':' + subjectPrefix,
-				Message=theMessage + tagsMsg,
-			)
-
-		except Exception as e:
-			self.logger.error('publishSNSTopicMessage() ' + str(e) )
 
 	
 
