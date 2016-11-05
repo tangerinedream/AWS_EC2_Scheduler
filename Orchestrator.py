@@ -45,6 +45,7 @@ class Orchestrator(object):
 
 	TIER_STOP='TierStop'
 	TIER_START='TierStart'
+	TIER_SCALING='TierScaling'
 	TIER_NAME='TierTagValue'
 	TIER_SEQ_NBR='TierSequence'
 	TIER_SYCHRONIZATION='TierSynchronization'
@@ -56,13 +57,13 @@ class Orchestrator(object):
 
 	ACTION_STOP='Stop'
 	ACTION_START='Start'
-	ACTION_SCALE_UP='ScaleUp'
-	ACTION_SCALE_DOWN='ScaleDown'
+	# ACTION_SCALE_UP='ScaleUp'
+	# ACTION_SCALE_DOWN='ScaleDown'
 
 	LOG_LEVEL_INFO='info'
 	LOG_LEVEL_DEBUG='debug'
 
-	def __init__(self, partitionTargetValue, loglevel, dynamoDBRegion, dryRun=False):
+	def __init__(self, partitionTargetValue, loglevel, dynamoDBRegion, scalingProfile, dryRun=False):
 
 		self.partitionTargetValue=partitionTargetValue  # must be set prior to invoking initlogging()
 		self.initLogging(loglevel)
@@ -122,6 +123,7 @@ class Orchestrator(object):
 			Orchestrator.TIER_SPEC_PARTITION_KEY,
 			Orchestrator.TIER_STOP,
 			Orchestrator.TIER_START,
+			Orchestrator.TIER_SCALING,
 			Orchestrator.TIER_NAME,
 			Orchestrator.TIER_SEQ_NBR,
 			Orchestrator.TIER_SYCHRONIZATION,
@@ -129,6 +131,8 @@ class Orchestrator(object):
 			Orchestrator.TIER_STOP_OS_TYPE,
 			Orchestrator.INTER_TIER_ORCHESTRATION_DELAY
 		]
+
+		self.scalingProfile = scalingProfile
 
 		#
 		###
@@ -149,9 +153,7 @@ class Orchestrator(object):
 		self.sequencedTiersList=[]
 
 		self.validActionNames = [ Orchestrator.ACTION_START, 
-								  Orchestrator.ACTION_STOP, 
-								  Orchestrator.ACTION_SCALE_UP,
-								  Orchestrator.ACTION_SCALE_DOWN 
+								  Orchestrator.ACTION_STOP
 								]
 
 		# These are the official codes per Boto3
@@ -252,12 +254,18 @@ class Orchestrator(object):
 					for badAttrKey in setDiff:
 						self.logger.warning('Invalid dynamoDB attribute specified->'+str(badAttrKey)+'<- will be ignored')
 
+				self.tierSpecDict[currTier[Orchestrator.TIER_NAME]] = {}
 				# Pull out the Dictionaries for each of the below. 
 				# Result is a key, and a dictionary
-				self.tierSpecDict[ currTier[Orchestrator.TIER_NAME] ] = {
-					Orchestrator.TIER_STOP : currTier[ Orchestrator.TIER_STOP ], 
-					Orchestrator.TIER_START : currTier[ Orchestrator.TIER_START ]
-				}
+				if( Orchestrator.TIER_STOP in currTier ):
+					self.tierSpecDict[ currTier[Orchestrator.TIER_NAME] ].update( { Orchestrator.TIER_STOP : currTier[ Orchestrator.TIER_STOP ] } )
+
+				if (Orchestrator.TIER_START in currTier):
+					self.tierSpecDict[ currTier[Orchestrator.TIER_NAME] ].update( { Orchestrator.TIER_START : currTier[ Orchestrator.TIER_START ] } )
+
+				if (Orchestrator.TIER_SCALING in currTier):
+					self.tierSpecDict[ currTier[Orchestrator.TIER_NAME] ].update( { Orchestrator.TIER_SCALING : currTier[ Orchestrator.TIER_SCALING ] } )
+
 				#self.logSpecDict('lookupTierSpecs', currTier, Orchestrator.LOG_LEVEL_DEBUG )
 
 			# Log the constructed Tier Spec Dictionary
@@ -534,7 +542,7 @@ class Orchestrator(object):
 		self.finishTime = datetime.datetime.now().replace(microsecond=0)
 
 		self.logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-		self.logger.info('++ Completed processing for workload ->' + self.partitionTargetValue +'<- in ' + str(self.finishTime - self.startTime) + ' seconds')
+		self.logger.info('++ Completed processing ['+ action +'][' + self.partitionTargetValue + ']<- in ' + str(self.finishTime - self.startTime) + ' seconds')
 		self.logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 	
 	def makeSNSTopicSubjectLine(self):
@@ -610,7 +618,14 @@ class Orchestrator(object):
 		for currInstance in instancesToStartList:
 			self.logger.debug('Starting instance %s', currInstance)
 			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.logger, self.dryRunFlag)
-			startWorker.execute()
+
+			# If a ScalingProfile was specified, change the instance type now, prior to Start
+			instanceTypeToLaunch = self.isScalingAction(tierName)
+			if( instanceTypeToLaunch ):
+				startWorker.scaleInstance(instanceTypeToLaunch)
+
+			# Finally, have the worker Start the instance
+			startWorker.start()
 
 		# Delay to be introduced prior to allowing the next tier to be actioned.
 		# It may make sense to allow some amount of time for the instances to Stop, prior to Orchestration continuing.
@@ -618,12 +633,26 @@ class Orchestrator(object):
 
 		self.logger.debug('startATier() completed for tier %s' % tierName)
 
-	def postEvent(self):
-		# If SNS flag enabled and SNS setup, also send to SNS
-		pass
+	def isScalingAction(self, tierName):
 
-	def scaleInstance(self, direction):
-		pass
+		# First, is the ScalingProfile flag even set ?
+		if(self.scalingProfile):
+			self.logger.debug('ScalingProfile requested')
+
+			# Unpack the ScalingDictionary
+			tierAttributes = self.tierSpecDict[tierName]
+			scalingDict = tierAttributes[ Orchestrator.TIER_SCALING ]
+			self.logger.debug('ScalingProfile for Tier %s is %s ' % (tierName, str(scalingDict) ))
+
+			# Ok, so next, does this tier have a Scaling Profile?
+			if( self.scalingProfile in scalingDict ):
+				# Ok, so then what is the EC2 InstanceType to launch with, for the given ScalingProfile specified ?
+				instanceType = scalingDict[self.scalingProfile]
+				return instanceType
+			else:
+				self.logger.warning('Scaling Profile of [%s] not in tier [%s] ' % (tierName, str(scalingDict) ) )
+
+		return( None )
 
 	def initLogging(self, loglevel):
 		# Setup the Logger
@@ -691,6 +720,7 @@ if __name__ == "__main__":
 	parser.add_argument('-a','--action', choices=['Stop', 'Start'], help='Action to Orchestrate (e.g. Stop or Start)', required=False)
 	parser.add_argument('-t','--testcases', action='count', help='Run the test cases', required=False)
 	parser.add_argument('-d','--dryrun', action='count', help='Run but take no Action', required=False)
+	parser.add_argument('-p','--scalingProfile', help='Resize instances based on Scaling Profile name', required=False)
 	parser.add_argument('-l','--loglevel', choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to record log messages to the logfile', required=False)
 	
 	args = parser.parse_args()
@@ -706,7 +736,7 @@ if __name__ == "__main__":
 		dryRun = False
 
 	# Launch the Orchestrator - the main component of the subsystem
-	orchMain = Orchestrator(args.workloadIdentifier, loglevel, args.dynamoDBRegion, dryRun)
+	orchMain = Orchestrator(args.workloadIdentifier, loglevel, args.dynamoDBRegion, args.scalingProfile, dryRun)
 
 	# If testcases set, run them, otherwise run the supplied Action only
 	if( args.testcases > 0 ):	

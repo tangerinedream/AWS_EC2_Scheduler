@@ -69,11 +69,27 @@ class StartWorker(Worker):
 				#EC2.Instance.start()
 				result=self.instance.start()
 			except Exception as e:
-				self.logger.warning('Worker:: instance.start() encountered an exception of -->' + str(e))
+				self.logger.warning('Worker::instance.start() encountered an exception of -->' + str(e))
 
 		self.logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 
-	def execute(self):
+	def scaleInstance(self, modifiedInstanceType):
+		if( self.dryRunFlag ):
+			self.logger.warning('DryRun Flag is set - instance will not be scaled')
+		else:
+			self.logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
+			try:
+				result=self.instance.modify_attribute(
+					Attribute='instanceType',
+					InstanceType={
+						'Value': modifiedInstanceType
+					}
+				)
+			except Exception as e:
+				self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
+
+
+	def start(self):
 		self.startInstance()
 
 
