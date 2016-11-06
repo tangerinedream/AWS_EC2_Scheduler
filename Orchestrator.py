@@ -223,7 +223,9 @@ class Orchestrator(object):
 		for k,v in sourceDict.iteritems():
 			resList.append(k)
 			if( isinstance(v, dict) ):
-				self.recursiveFindKeys(v, resList)
+				# Since scalingProfile key names are user dependent, we can't validate them
+				if( k != Orchestrator.TIER_SCALING ):
+					self.recursiveFindKeys(v, resList)
 
 	def lookupTierSpecs(self, partitionTargetValue):
 		'''

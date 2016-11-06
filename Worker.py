@@ -74,27 +74,32 @@ class StartWorker(Worker):
 		self.logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 
 	def scaleInstance(self, modifiedInstanceType):
-		if( self.dryRunFlag ):
-			self.logger.warning('DryRun Flag is set - instance will not be scaled')
-		else:
-			self.logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
-			try:
-				result=self.instance.modify_attribute(
-					Attribute='instanceType',
-					InstanceType={
-						'Value': modifiedInstanceType
-					}
-				)
-			except Exception as e:
-				self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
+		instanceState = self.instance.state
 
+		if (instanceState['Name'] == 'stopped'):
+
+			if( self.dryRunFlag ):
+				self.logger.warning('DryRun Flag is set - instance will not be scaled')
+			else:
+				self.logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
+				try:
+					# EC2.Instance.modify_attribute()
+					result=self.instance.modify_attribute(
+						InstanceType={
+							'Value': modifiedInstanceType
+						}
+					)
+				except Exception as e:
+					self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
+
+			self.logger.info('scaleInstance() for ' + self.instance.id + ' result is %s' % result)
+
+		else:
+			logMsg = 'scaleInstance() requested to change instance type for non-stopped instance ' + self.instance.id + ' no action taken'
+			self.logger.warning(logMsg)
 
 	def start(self):
 		self.startInstance()
-
-
-
-
 
 class StopWorker(Worker):
 	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag):
@@ -242,10 +247,6 @@ class StopWorker(Worker):
 		
 		return( self.overrideFlag )
 
-
-
-	
-
 	def setOverrideFlagSet(self, overrideFlag):
 		self.overrideFlag=strtobool(overrideFlag)
 
@@ -253,31 +254,3 @@ class StopWorker(Worker):
 	def execute(self, S3BucketName, S3KeyPrefixName, overrideFileName, osType):
 		if( self.isOverrideFlagSet(S3BucketName, S3KeyPrefixName, overrideFileName, osType) == False ):
 			self.stopInstance()
-
-class ScalingWorker(Worker):
-	def __init__(self, workloadRegion, instance, newInstanceType):
-		super(ScalingWorker, self).__init__(workloadRegion, instance)
-		self.newInstanceType=newInstanceType
-
-	def modifyInstanceType(self):
-		#EC2.Instance.modify_attribute()
-		result=self.instance.modify_attribute(
-			InstanceType={
-		        'Value': self.newInstanceType
-		    },
-		)
-		self.logger.info(self.instance.id + ' :Scaling')
-		self.logger.debug(result)
-
-	def execute(self):
-		instanceState = self.instance.state
-		
-		if( instanceState['Name'] == 'stopped' ):
-			self.modifyInstanceType()
-			self.logger.debug('Instance ' + self.instance.id + 'State changed to ' + self.newInstanceType)
-		else:
-			logMsg = 'ScalingWorker requested to change instance type for non-stopped instance ' + self.instance.id + ' no action taken'
-			self.logger.warning(logMsg)
-			self.logger.debug(logMsg)
-
-
