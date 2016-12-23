@@ -39,6 +39,7 @@ Do a once over on the documentation, then try it out.
       cd /tmp			
       curl https://amazon-ssm-us-west-2.s3.amazonaws.com/latest/debian_amd64/amazon-ssm-agent.deb -o amazon-ssm-agent.deb
       dpkg -i amazon-ssm-agent.deb
+      systemctl start amazon-ssm-agent
       ```
     1. For the instance from which you will be running the product, you'll need the following Policy enabled for either the instance (if running within AWS), or attached to an IAM user if running outside of AWS.
 
@@ -121,9 +122,9 @@ Do a once over on the documentation, then try it out.
 ## DynamoDB Tables
 All of the configuration is stored in DynamodDB.  Currently, the provisioning of the tables is not automated but could be done by anyone interested in contributing.  In the meantime, you'll need to provision two tables, and I recommend doing so with a provisioned throughput of 1 unit for both write and read (eventual consistency).  That will set you back about $0.59/month per table.
 ### WorkloadSpecification
-Table Name is WorkloadSpecification
-Primary Key is SpecName
-Sort Key is not used
+Table Name|Partition Key
+----------|-------------
+WorkloadSpecification|SpecName
 
 For each workload, there is one entry in the table.  Each workload table entry maps to one or more TierSpecification, based on the number of tiers that comprise the workload.
 
@@ -180,9 +181,9 @@ The workload specification contains tier independent configuration of the worklo
 ```
 
 ### TierSpecification
-Table Name is WorkloadSpecification
-Primary Key is SpecName
-Sort Key is TierTagValue
+Table Name|Partition Key|Sort Key
+----------|-------------|--------
+TierSpecification|SpecName|TierTagValue
 
 The tier specification represent the tier-specific configuration.  A tier means as set of instances that share the same Tag Value.  For example, a tier could be "Web", or "App", or "DB", or however your architecture is laid out.  Within a tier, there may be one or more instances.  As there may be multiple rows for a given WorkloadSpecification, each Tier contains the Workload identifier.
 
@@ -227,6 +228,8 @@ Valid values are "Linux", or "Windows"</dd>
 <dt>TierTagValue (Sort Key)</dt>
 <dd>: The name of the Tag *Value* that will be used as a search target for instances for this particular tier.  The Tag *Key* is specified in the WorkloadSpec.</dd>
 
+<dt>TierScaling</dt>
+<dd>:  Optional dictionary containing the _Profile_ mapping of user name to instance type and size. Scaling is only used at Start Action time, and is optional. Dictionary is _profile name_ : instance size.  If a tier does not contain an _Profile_ as specified on the command line, no scaling action will occur when the tier is started.</dd>
 
 </dl>
 
@@ -245,6 +248,12 @@ Valid values are "Linux", or "Windows"</dd>
     "TierSynchronization": "False",
     "InterTierOrchestrationDelay": "10"
   },
+  TierScaling": {
+    "default": "t2.nano",
+    "profileB": "t2.medium",
+    "profileC": "t2.large",
+    "profileD": "c4.large"
+  },
   "TierTagValue": "Role_Web"
 }
 ```
@@ -262,6 +271,12 @@ Or, for Windows guest OS ...
     "TierStopOverrideOperatingSystem": "Windows",
     "TierSynchronization": "False"
   },
+  TierScaling": {
+    "default": "t2.nano",
+    "profileB": "t2.medium",
+    "profileC": "t2.large",
+    "profileD": "c4.large"
+  },
   "TierTagValue": "Role_Web"
 }
 ```
@@ -278,9 +293,10 @@ Below are the usage flags for the Orchestrator, which is all you need to launch 
 
 ### Command Line Options
 ```
+
 $ python Orchestrator.py -h
 usage: Orchestrator.py [-h] -w WORKLOADIDENTIFIER -r DYNAMODBREGION
-                       [-a {Stop,Start}] [-t] [-d]
+                       [-a {Stop,Start}] [-t] [-d] [-p SCALINGPROFILE]
                        [-l {critical,error,warning,info,debug,notset}]
 
 Command line parser
@@ -297,6 +313,8 @@ optional arguments:
                         Action to Orchestrate (e.g. Stop or Start)
   -t, --testcases       Run the test cases
   -d, --dryrun          Run but take no Action
+  -p SCALINGPROFILE, --scalingProfile SCALINGPROFILE
+                        Resize instances based on Scaling Profile name
   -l {critical,error,warning,info,debug,notset}, --loglevel {critical,error,warning,info,debug,notset}
                         The level to record log messages to the logfile
 ```
@@ -314,3 +332,7 @@ No **Action** will be taken. For example, here, the Stop will not execute.
 
 ### Run the Test Suite - Starts and Stops instances with 90 second delay inbetween
 `$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -t`
+
+### Start all of the instances under a particular _profile_, in this case user named as 'performant'
+`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -p performant -a Start`
+
