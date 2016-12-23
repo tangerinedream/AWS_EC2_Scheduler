@@ -248,7 +248,7 @@ Valid values are "Linux", or "Windows"</dd>
     "TierSynchronization": "False",
     "InterTierOrchestrationDelay": "10"
   },
-  TierScaling": {
+  "TierScaling": {
     "default": "t2.nano",
     "profileB": "t2.medium",
     "profileC": "t2.large",
@@ -271,7 +271,7 @@ Or, for Windows guest OS ...
     "TierStopOverrideOperatingSystem": "Windows",
     "TierSynchronization": "False"
   },
-  TierScaling": {
+  "TierScaling": {
     "default": "t2.nano",
     "profileB": "t2.medium",
     "profileC": "t2.large",
