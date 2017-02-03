@@ -333,6 +333,6 @@ No **Action** will be taken. For example, here, the Stop will not execute.
 ### Run the Test Suite - Starts and Stops instances with 90 second delay inbetween
 `$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -t`
 
-### Start all of the instances under a particular _profile_, in this case user named as 'performant'
+### Start all of the instances under a particular _profile_, in this case profile named as 'performant'
 `$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -p performant -a Start`
 

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import boto3
 import logging
+import time
 from distutils.util import strtobool
 from SSMDelegate import SSMDelegate
 
@@ -81,14 +82,18 @@ class StartWorker(Worker):
 			if( self.dryRunFlag ):
 				self.logger.warning('DryRun Flag is set - instance will not be scaled')
 			else:
-				self.logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
 				try:
+					self.logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
 					# EC2.Instance.modify_attribute()
 					result=self.instance.modify_attribute(
 						InstanceType={
 							'Value': modifiedInstanceType
 						}
 					)
+					# It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
+					#    this can cause an issue on instance type change, whereby the LaunchPlan generates an exception.
+					#    To mitigate against this, we will introduce a one second sleep delay after modifying an attribute
+					time.sleep(1.0)
 				except Exception as e:
 					self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
 

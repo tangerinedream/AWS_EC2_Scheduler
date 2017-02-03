@@ -150,7 +150,7 @@ class SSMDelegate(object):
 			self.logger.debug('Instance List:  ' + str(self.getAttributeFromSSMSendCommand(response, 'InstanceIds')))
 
 		except Exception as e:
-			self.logger.warning('sendSSMCommand() Exception occurred. Please ensure SSM agent is installed on instance, \
+			self.logger.warning('sendSSMCommand() Exception occurred. Please ensure DynamoDB table has correct Operating System for  TierStopOverrideOperatingSystemSSM attribute and SSM agent is installed on instance, \
 and instance is running with Instance Profile (see documentation).  Exception was: ' + str(e) )
 			response=''
 
@@ -237,18 +237,28 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 
 		return( result )
 
-	def makeS3Key(self):
+	def makeS3Key(self, version=1):
 		# bucketName/keyPrefixName+region/commandId/instance-id/awsrunShellScript/0.aws:runShellScript
 		delimiter='/'
 
 		if( self.osType == SSMDelegate.OS_TYPE_WINDOWS ):
 			# Note: Do not prefix 'key' with leading slash
-			key= \
-				self.S3KeyPrefixName \
-				+delimiter+self.commandId \
-				+delimiter+self.instanceId \
-				+delimiter+'awsrunPowerShellScript' \
-				+delimiter+'stdout.txt'
+			if(version==2):
+				key= \
+					self.S3KeyPrefixName \
+					+delimiter+self.commandId \
+					+delimiter+self.instanceId \
+					+delimiter+'awsrunPowerShellScript' \
+					+delimiter +'0.awsrunPowerShellScript' \
+					+delimiter+'stdout'  # Note: for some reason the .txt is dropped in this version as well
+			else:  # includes version == 1
+				key = \
+					self.S3KeyPrefixName \
+					+ delimiter + self.commandId \
+					+ delimiter + self.instanceId \
+					+ delimiter + 'awsrunPowerShellScript' \
+					+ delimiter + 'stdout.txt'
+
 		else:
 			# Note: Do not prefix 'key' with leading slash
 			key= \
@@ -307,16 +317,60 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 		content=''
 		# Return the output result from the script execution
 
-		# First, construct the location
-		key = self.makeS3Key()
 
 		try:
-			#
-			result = self.s3.get_object(
-				Bucket=self.S3BucketName,
-				Key=key
-			)
 
+			key = self.makeS3Key()
+			found = False
+
+			if (self.osType == SSMDelegate.OS_TYPE_WINDOWS):  # only need to do this for windows
+
+				# First, check for existence in default (e.g. SSM version == 1 ) location
+				result = self.s3.list_objects_v2(
+					Bucket=self.S3BucketName,
+					Prefix=key
+				)
+				# If not there and if Windows, check in the second location (e.g. SSM version == 2) location
+				if( result['KeyCount'] == 0 ):
+					self.logger.info("Could not locate SSM result file in S3, for key :" + key + ": Will now try new loacation...")
+					version = 2
+					key = self.makeS3Key(version)
+
+					result = self.s3.list_objects_v2(
+						Bucket=self.S3BucketName,
+						Prefix=key
+					)
+					if( result['KeyCount'] == 0 ):
+						self.logger.warning("Could not locate SSM result file in S3 using new keyname structure, for key :" + key)
+					else:
+						found = True
+				else:
+					found = True
+
+			else:
+				result = self.s3.list_objects_v2(
+					Bucket=self.S3BucketName,
+					Prefix=key
+				)
+				if (result['KeyCount'] > 0):
+					found = True
+				else:
+					self.logger.warning("Could not locate SSM result file in S3 :" + key)
+
+			if(found):
+				# Get the S3 object now
+				result = self.s3.get_object(
+					Bucket=self.S3BucketName,
+					Key=key
+				)
+
+
+		except Exception as e:
+			self.logger.warning('Could not lookup SSM results in S3.  Exception was -->' + str(e))
+			return (content)
+
+
+		try:
 			# Locate the Content in the response
 			if 'Body' in result:
 				stream = result['Body']
@@ -325,7 +379,7 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 				content = stream.read()
 
 		except Exception as e:
-			self.logger.warning('Could not lookup SSM results in S3.  Exception was -->' + str(3))
+			self.logger.warning('Found but could not read SSM results from S3.  Exception was -->' + str(e))
 
 		return(content)
 
