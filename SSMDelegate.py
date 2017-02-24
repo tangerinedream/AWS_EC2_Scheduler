@@ -37,6 +37,7 @@ class SSMDelegate(object):
 	DECISION_STOP_INSTANCE='Stop'
 	DECISION_NO_ACTION='Bypass'
 	DECISION_RETRIES_EXCEEDED='RetriesExceeded'
+	DECISION_S3_RESULTFILE_NOT_LOCATED='s3 file not located'
 	DECISION_NO_ACTION_UNEXPECTED_RESULT='unexpectedResult'
 
 	SCRIPT_STOP_INSTANCE='Stop'
@@ -205,6 +206,8 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 							# If the string says Continue, then it's a go.  Otherwise, we won't stop it.
 							if( scriptRes == SSMDelegate.SCRIPT_STOP_INSTANCE ):
 								result = SSMDelegate.DECISION_STOP_INSTANCE
+                                                        elif( scriptRes == SSMDelegate.DECISION_S3_RESULTFILE_NOT_LOCATED ):
+								result = SSMDelegate.DECISION_S3_RESULTFILE_NOT_LOCATED 
 						else:
 							# Wasn't Success, so let's output what it was
 							self.logger.warning('SSM response completed but not as "Success".  SSM result was ' + str(res) )
@@ -229,6 +232,8 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 			result=SSMDelegate.DECISION_RETRIES_EXCEEDED
 		elif( result == SSMDelegate.DECISION_STOP_INSTANCE ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' will be stopped')
+		elif( result == SSMDelegate.DECISION_S3_RESULTFILE_NOT_LOCATED ):
+			self.logger.info('SSM Command for InstanceId: ' + self.instanceId + ' completed, however, the results file is not locatable in s3.  As a precaution, the instance will NOT be stopped')
 		elif( result == SSMDelegate.DECISION_NO_ACTION ):
 			self.logger.info('InstanceId: ' + self.instanceId + ' has override file and will NOT be stopped')
 		else:
@@ -363,6 +368,9 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 					Bucket=self.S3BucketName,
 					Key=key
 				)
+                        else:
+                                result = ""
+                                content = SSMDelegate.DECISION_S3_RESULTFILE_NOT_LOCATED
 
 
 		except Exception as e:
