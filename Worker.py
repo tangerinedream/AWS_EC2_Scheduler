@@ -79,6 +79,7 @@ class StartWorker(Worker):
 
 		if (instanceState['Name'] == 'stopped'):
 
+			result='no result'
 			if( self.dryRunFlag ):
 				self.logger.warning('DryRun Flag is set - instance will not be scaled')
 			else:
@@ -97,7 +98,7 @@ class StartWorker(Worker):
 				except Exception as e:
 					self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
 
-			self.logger.info('scaleInstance() for ' + self.instance.id + ' result is %s' % result)
+				self.logger.info('scaleInstance() for ' + self.instance.id + ' result is %s' % result)
 
 		else:
 			logMsg = 'scaleInstance() requested to change instance type for non-stopped instance ' + self.instance.id + ' no action taken'
