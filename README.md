@@ -54,9 +54,13 @@ Do a once over on the documentation, then try it out.
             "Action": [
                 "ec2:DescribeInstanceStatus",
                 "ec2:DescribeInstances",
+                "ec2:ModifyInstanceAttribute",
                 "ec2:DescribeTags",
                 "ec2:StartInstances",
-                "ec2:StopInstances"
+                "ec2:StopInstances",
+                "elasticloadbalancing:DescribeLoadBalancers",
+                "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                "elasticloadbalancing:DeregisterInstancesFromLoadBalancer"
             ],
             "Resource": [
                 "*"
