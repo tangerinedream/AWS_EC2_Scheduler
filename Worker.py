@@ -4,6 +4,7 @@ import logging
 import time
 from distutils.util import strtobool
 from SSMDelegate import SSMDelegate
+import botocore
 
 __author__ = "Gary Silverman"
 
@@ -55,10 +56,35 @@ class Worker(object):
 
 
 class StartWorker(Worker):
-	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag):
+
+	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, all_elbs, elb, logger, dryRunFlag):
 		super(StartWorker, self).__init__(workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag)
 
 		self.ddbRegion=ddbRegion
+		self.all_elbs=all_elbs
+		self.elb=elb 
+		
+	def addressELBRegistration(self):
+		try:
+				for i in self.all_elbs['LoadBalancerDescriptions']:
+					for j in i['Instances']:
+						if j['InstanceId'] == self.instance.id:
+							elb_name = i['LoadBalancerName']
+							self.logger.debug("Instance %s is attached to ELB %s" % (self.instance.id, elb_name))
+							try:
+								self.elb.deregister_instances_from_load_balancer(LoadBalancerName=elb_name,Instances=[{'InstanceId': self.instance.id}])
+								self.logger.debug("Succesfully deregistered instance %s from load balancer %s" % (self.instance.id, elb_name))
+							except botocore.exceptions.ClientError as e:
+								self.logger.warning("Could not deregistered instance %s from load balancer %s" % (self.instance.id, elb_name))
+								self.logger.warning('Worker::addressELBRegistration()::deregister_instances_from_load_balancer() encountered an exception of -->' + str(e))
+							try:
+								self.elb.register_instances_with_load_balancer(LoadBalancerName=elb_name, Instances=[{'InstanceId': self.instance.id}])
+								self.logger.debug("Succesfully registered instance %s to load balancer %s" % (self.instance.id, elb_name))
+							except botocore.exceptions.ClientError as e:
+								self.logger.warning('Could not register instance [%s] to load balancer [%s] because of [%s]' % (self.instance.id, elb_name, str(e)))
+								self.logger.warning('Worker::addressELBRegistration()::register_instances_with_load_balancer() encountered an exception of -->' + str(e))
+		except Exception as e:
+			self.logger.warning('Worker::addressELBRegistration() encountered an exception of -->' + str(e))
 
 	def startInstance(self):
 
@@ -66,13 +92,14 @@ class StartWorker(Worker):
 		if( self.dryRunFlag ):
 			self.logger.warning('DryRun Flag is set - instance will not be started')
 		else:
-			try:
-				#EC2.Instance.start()
+			try:	
+				if self.all_elbs != "0":
+					self.logger.info('addressELBRegistration() for %s' % self.instance.id)
+					self.addressELBRegistration()
 				result=self.instance.start()
+				self.logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 			except Exception as e:
 				self.logger.warning('Worker::instance.start() encountered an exception of -->' + str(e))
-
-		self.logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 
 	def scaleInstance(self, modifiedInstanceType):
 		instanceState = self.instance.state
