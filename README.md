@@ -168,6 +168,10 @@ The workload specification contains tier independent configuration of the worklo
 <dd>: Optional, but recommended, parameter to limit the scope of the query for instance matching. </dd>
 </dl>
 
+<dt>ScaleInstanceDelay</dt>
+<dd>: Optional.  Specifies the sleep delay in seconds between the instance resize (Scaling Action) and instance Start.  This delay is necessary to address the eventual consistency issue seen on the AWS side when resizing and immediately Starting an instance. </dd>
+</dl>
+ 
 #### JSON: WorkloadSpecification 
 ```json
 {
