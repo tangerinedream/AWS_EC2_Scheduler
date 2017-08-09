@@ -17,6 +17,8 @@ __author__ = "Gary Silverman"
 class Orchestrator(object):
 
 	# Class Variables
+
+	# Mapping of Python Class Variables to DynamoDB Attribute Names in Workload Table
 	WORKLOAD_SPEC_TABLE_NAME='WorkloadSpecification'
 	WORKLOAD_SPEC_PARTITION_KEY='SpecName'
 
@@ -35,13 +37,15 @@ class Orchestrator(object):
 	WORKLOAD_KILL_SWITCH="DisableAllSchedulingActions"
 	WORKLOAD_KILL_SWITCH_TRUE="1"
 
+	WORKLOAD_SCALE_INSTANCE_DELAY="ScaleInstanceDelay"  #Delay in seconds after modifyAttribute() called ahead of startIntance()
 
-
-	TIER_FILTER_TAG_KEY='TierFilterTagName'
-	TIER_FILTER_TAG_VALUE='TierTagValue'
 
 	TIER_SPEC_TABLE_NAME='TierSpecification'
 	TIER_SPEC_PARTITION_KEY='SpecName'
+
+	# Mapping of Python Class Variables to DynamoDB Attribute Names in Tier Table
+	TIER_FILTER_TAG_KEY='TierFilterTagName'
+	TIER_FILTER_TAG_VALUE='TierTagValue'
 
 	TIER_STOP='TierStop'
 	TIER_START='TierStart'
@@ -102,6 +106,7 @@ class Orchestrator(object):
 			Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME,
 			Orchestrator.WORKLOAD_SNS_TOPIC_NAME,
 			Orchestrator.WORKLOAD_KILL_SWITCH,
+			Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY,
 			Orchestrator.TIER_FILTER_TAG_KEY
 		]
 
@@ -180,6 +185,18 @@ class Orchestrator(object):
 		# The region where the workload is running.  Note: this may be a different region than the 
 		# DynamodDB configuration
 		self.workloadRegion = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_REGION_KEY]
+
+		# The delay (in seconds) when scaling an instance type ahead of Starting the newly scaled instance.
+		# This is needed due to an eventual consistency issue in AWS whereby Instance.modifyAttribute() is changed
+		# and Instance.startInstance() experiences an Exception because the modifyAttribute() has not fully propogated.
+		self.scaleInstanceDelay = float(4.0)  # default to four seconds (float)
+		if( Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY in self.workloadSpecificationDict ):
+			try:
+				delayValueStr = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY]
+				self.scaleInstanceDelay = float(delayValueStr)
+			except Exception as e:
+				self.logger.warning('Couldn\'t convert %s to float. Using default of %s.  Exception was %s' % (delayValueStr, str(self.scaleInstanceDelay), str(e)) )
+
 
 		# We provision the boto3 resource here because we need to have determined the Workload Region as a dependency,
 		# which is done just above in this method
@@ -632,7 +649,7 @@ class Orchestrator(object):
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
 			self.logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.all_elbs, self.elb, self.logger, self.dryRunFlag)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.logger, self.dryRunFlag)
 
 			# If a ScalingProfile was specified, change the instance type now, prior to Start
 			instanceTypeToLaunch = self.isScalingAction(tierName)

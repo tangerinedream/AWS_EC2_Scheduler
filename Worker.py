@@ -57,12 +57,13 @@ class Worker(object):
 
 class StartWorker(Worker):
 
-	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, all_elbs, elb, logger, dryRunFlag):
+	def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, all_elbs, elb, scalingInstanceDelay, logger, dryRunFlag):
 		super(StartWorker, self).__init__(workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag)
 
 		self.ddbRegion=ddbRegion
 		self.all_elbs=all_elbs
-		self.elb=elb 
+		self.elb=elb
+		self.scalingInstanceDelay=scalingInstanceDelay
 		
 	def addressELBRegistration(self):
 		try:
@@ -70,7 +71,7 @@ class StartWorker(Worker):
 					for j in i['Instances']:
 						if j['InstanceId'] == self.instance.id:
 							elb_name = i['LoadBalancerName']
-							self.logger.debug("Instance %s is attached to ELB %s" % (self.instance.id, elb_name))
+							self.logger.info("Instance %s is attached to ELB %s, and will be deregistered and re-registered" % (self.instance.id, elb_name))
 							try:
 								self.elb.deregister_instances_from_load_balancer(LoadBalancerName=elb_name,Instances=[{'InstanceId': self.instance.id}])
 								self.logger.debug("Succesfully deregistered instance %s from load balancer %s" % (self.instance.id, elb_name))
@@ -94,7 +95,7 @@ class StartWorker(Worker):
 		else:
 			try:	
 				if self.all_elbs != "0":
-					self.logger.info('addressELBRegistration() for %s' % self.instance.id)
+					self.logger.debug('addressELBRegistration() for %s' % self.instance.id)
 					self.addressELBRegistration()
 				result=self.instance.start()
 				self.logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
@@ -111,7 +112,7 @@ class StartWorker(Worker):
 				self.logger.warning('DryRun Flag is set - instance will not be scaled')
 			else:
 				try:
-					self.logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
+					self.logger.info('Instance [%s] will be scaled to Instance Type [%s], with ScalingInstanceDelay of %.1f' % (self.instance.id , modifiedInstanceType, self.scalingInstanceDelay) )
 					# EC2.Instance.modify_attribute()
 					result=self.instance.modify_attribute(
 						InstanceType={
@@ -121,7 +122,7 @@ class StartWorker(Worker):
 					# It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
 					#    this can cause an issue on instance type change, whereby the LaunchPlan generates an exception.
 					#    To mitigate against this, we will introduce a one second sleep delay after modifying an attribute
-					time.sleep(4.0)
+					time.sleep(self.scalingInstanceDelay)
 				except Exception as e:
 					self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
 
