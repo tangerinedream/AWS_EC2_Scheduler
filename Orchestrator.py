@@ -673,16 +673,21 @@ class Orchestrator(object):
 
 			# Unpack the ScalingDictionary
 			tierAttributes = self.tierSpecDict[tierName]
-			scalingDict = tierAttributes[ Orchestrator.TIER_SCALING ]
-			self.logger.debug('ScalingProfile for Tier %s is %s ' % (tierName, str(scalingDict) ))
+			if( Orchestrator.TIER_SCALING in tierAttributes):
 
-			# Ok, so next, does this tier have a Scaling Profile?
-			if( self.scalingProfile in scalingDict ):
-				# Ok, so then what is the EC2 InstanceType to launch with, for the given ScalingProfile specified ?
-				instanceType = scalingDict[self.scalingProfile]
-				return instanceType
+				scalingDict = tierAttributes[ Orchestrator.TIER_SCALING ]
+				self.logger.debug('ScalingProfile for Tier %s is %s ' % (tierName, str(scalingDict) ))
+
+				# Ok, so next, does this tier have a Scaling Profile?
+				if( self.scalingProfile in scalingDict ):
+					# Ok, so then what is the EC2 InstanceType to launch with, for the given ScalingProfile specified ?
+					instanceType = scalingDict[self.scalingProfile]
+					return instanceType
+				else:
+					self.logger.warning('Scaling Profile of [%s] not in tier [%s] ' % (str(self.scalingProfile), tierName ) )
+
 			else:
-				self.logger.warning('Scaling Profile of [%s] not in tier [%s] ' % (tierName, str(scalingDict) ) )
+				self.logger.warning('Scaling Profile of [%s] specified but no TierScaling dictionary found in DynamoDB for tier [%s].  No scaling action taken' % (str(self.scalingProfile), tierName) )
 
 		return( None )
 
