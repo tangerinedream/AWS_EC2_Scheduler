@@ -130,11 +130,14 @@ class StartWorker(Worker):
                     result = self.instance.modify_attribute(
                         InstanceType={
                             'Value': modifiedInstanceType
-                        },
+                        }
+                    )
+                    result = self.instance.modify_attribute(
                         EbsOptimized={
                             'Value': ebsOptimizedAttr
                         }
                     )
+                        
                     # It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
                     #    this can cause an issue on instance type change, whereby the LaunchPlan generates an exception.
                     #    To mitigate against this, we will introduce a one second sleep delay after modifying an attribute
