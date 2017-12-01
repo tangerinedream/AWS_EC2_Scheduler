@@ -57,13 +57,14 @@ class Worker(object):
 
 class StartWorker(Worker):
 
-    def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, all_elbs, elb, scalingInstanceDelay, logger, dryRunFlag):
+    def __init__(self, ddbRegion, workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, all_elbs, elb, logger, dryRunFlag, RetryApi,max_api_request):
         super(StartWorker, self).__init__(workloadRegion, snsNotConfigured, snsTopic, snsTopicSubject, instance, logger, dryRunFlag)
 
         self.ddbRegion=ddbRegion
         self.all_elbs=all_elbs
         self.elb=elb
-        self.scalingInstanceDelay=scalingInstanceDelay
+	self.RetryApi=RetryApi
+	self.max_api_request=max_api_request
 
     def addressELBRegistration(self):
         try:
@@ -72,18 +73,36 @@ class StartWorker(Worker):
                         if j['InstanceId'] == self.instance.id:
                             elb_name = i['LoadBalancerName']
                             self.logger.info("Instance %s is attached to ELB %s, and will be deregistered and re-registered" % (self.instance.id, elb_name))
-                            try:
-                                self.elb.deregister_instances_from_load_balancer(LoadBalancerName=elb_name,Instances=[{'InstanceId': self.instance.id}])
-                                self.logger.debug("Succesfully deregistered instance %s from load balancer %s" % (self.instance.id, elb_name))
-                            except botocore.exceptions.ClientError as e:
-                                self.logger.warning("Could not deregistered instance %s from load balancer %s" % (self.instance.id, elb_name))
-                                self.logger.warning('Worker::addressELBRegistration()::deregister_instances_from_load_balancer() encountered an exception of -->' + str(e))
-                            try:
-                                self.elb.register_instances_with_load_balancer(LoadBalancerName=elb_name, Instances=[{'InstanceId': self.instance.id}])
-                                self.logger.debug("Succesfully registered instance %s to load balancer %s" % (self.instance.id, elb_name))
-                            except botocore.exceptions.ClientError as e:
-                                self.logger.warning('Could not register instance [%s] to load balancer [%s] because of [%s]' % (self.instance.id, elb_name, str(e)))
-                                self.logger.warning('Worker::addressELBRegistration()::register_instances_with_load_balancer() encountered an exception of -->' + str(e))
+			    success_deregister_check=0
+			    while (success_deregister_check == 0):
+                            	try:
+                                	self.elb.deregister_instances_from_load_balancer(LoadBalancerName=elb_name,Instances=[{'InstanceId': self.instance.id}])
+                                	self.logger.debug("Succesfully deregistered instance %s from load balancer %s" % (self.instance.id, elb_name))
+					success_deregister_check=1
+					self.warningMsg = "Instance started"
+					self.publishSNSTopicMessage(self.warningMsg, self.warningMsg, self.instance)
+                            	except botocore.exceptions.ClientError as e:
+                                	self.logger.warning("Could not deregistered instance %s from load balancer %s" % (self.instance.id, elb_name))
+                                	self.logger.warning('Worker::addressELBRegistration()::deregister_instances_from_load_balancer() encountered an exception of -->' + str(e))
+					self.max_api_request += 1       
+                                	if (self.max_api_request > 10):
+                                        	msg = '[ERROR] Maximum Retries RateLimitExceeded reached for ELB deregister, stopping process at number of retries--> '
+                                        	self.logger.error(msg + str(self.max_api_request))
+                                        	exit()
+			    success_register_check=0
+			    while (success_register_check == 0):
+                            	try:
+                                	self.elb.register_instances_with_load_balancer(LoadBalancerName=elb_name, Instances=[{'InstanceId': self.instance.id}])
+                                	self.logger.debug("Succesfully registered instance %s to load balancer %s" % (self.instance.id, elb_name))
+					success_register_check=1
+                            	except botocore.exceptions.ClientError as e:
+                                	self.logger.warning('Could not register instance [%s] to load balancer [%s] because of [%s]' % (self.instance.id, elb_name, str(e)))
+                                	self.logger.warning('Worker::addressELBRegistration()::register_instances_with_load_balancer() encountered an exception of -->' + str(e))
+					self.max_api_request += 1       
+                                	if (self.max_api_request > 10):
+                                        	msg = '[ERROR] Maximum Retries RateLimitExceeded reached for ELB register, stopping process at number of retries--> '
+                                        	self.logger.error(msg + str(self.max_api_request))
+                                        	exit()
         except Exception as e:
             self.logger.warning('Worker::addressELBRegistration() encountered an exception of -->' + str(e))
 
@@ -116,34 +135,54 @@ class StartWorker(Worker):
             else:
                 instanceType = self.instance.instance_type  # This will return as t2.xlarge for example
                 instanceFamily = instanceType.split('.')[0]  # Grab the first token after split()
+                self.logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
+                # EC2.Instance.modify_attribute()
+                # Check and exclude non-optimized instance families. Should be enhanced to be a map.  Currently added as hotfix.
+                preventEbsOptimizedList = [ 't2' ]
+                if (instanceFamily in preventEbsOptimizedList ):
+                    ebsOptimizedAttr = False
+		else:
+                    ebsOptimizedAttr = self.instance.ebs_optimized    # May have been set to True or False previously
+		instance_type_check=0
+		while(instance_type_check == 0):
+			try: 
+       			        result = self.instance.modify_attribute(
+                       		InstanceType={
+                           	'Value': modifiedInstanceType
+                        	}
+                    		)
+				instance_type_check=1
+			except Exception as e:
+				self.RetryApi(self.max_api_request)
+				self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
+				self.max_api_request += 1	
+				if (self.max_api_request > 10):
+                                        msg = '[ERROR] Maximum Retries RateLimitExceeded reached for modifiedInstanceType , stopping process at number of retries--> '
+                                        self.logger.error(msg + str(self.max_api_request))
+                                        exit()
+		
+		instance_ebs_check=0    
+		while(instance_ebs_check == 0):
+			try:
+	                        result = self.instance.modify_attribute(
+                                EbsOptimized={
+                                'Value': ebsOptimizedAttr
+                        	}
+                    		)
+                        	instance_ebs_check=1
+			except Exception as e:
+				self.RetryApi(self.max_api_request)
+                    		self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ ebsOptimizedAttr +'] resulted in -->' + str(e))
+				self.max_api_request += 1
+				if (self.max_api_request > 10):
+					msg = '[ERROR] Maximum Retries RateLimitExceeded reached for ebsOptimizedAttr, stopping process at number of retries--> '
+                                        self.logger.error(msg + str(self.max_api_request))
+                                        exit()
 
-                try:
-                    self.logger.info('Instance [%s] will be scaled to Instance Type [%s], with ScalingInstanceDelay of %.1f' % (self.instance.id , modifiedInstanceType, self.scalingInstanceDelay) )
-                    # EC2.Instance.modify_attribute()
-                    # Check and exclude non-optimized instance families. Should be enhanced to be a map.  Currently added as hotfix.
-                    preventEbsOptimizedList = [ 't2' ]
-                    if (instanceFamily in preventEbsOptimizedList ):
-                        ebsOptimizedAttr = False
-                    else:
-                        ebsOptimizedAttr = self.instance.ebs_optimized    # May have been set to True or False previously
-
-                    result = self.instance.modify_attribute(
-                        InstanceType={
-                            'Value': modifiedInstanceType
-                        }
-                    )
-                    result = self.instance.modify_attribute(
-                        EbsOptimized={
-                            'Value': ebsOptimizedAttr
-                        }
-                    )
-                        
+		        
                     # It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
                     #    this can cause an issue on instance type change, whereby the LaunchPlan generates an exception.
                     #    To mitigate against this, we will introduce a one second sleep delay after modifying an attribute
-                    time.sleep(self.scalingInstanceDelay)
-                except Exception as e:
-                    self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
 
                 self.logger.info('scaleInstance() for ' + self.instance.id + ' result is %s' % result)
 

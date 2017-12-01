@@ -173,8 +173,10 @@ class Orchestrator(object):
 		}
 
 
-
 	def initializeState(self):
+
+		# Maximum number of retries for API calls
+		self.max_api_request=0
 
 		# Log the duration of the processing
 		self.startTime = datetime.datetime.now().replace(microsecond=0)
@@ -185,17 +187,6 @@ class Orchestrator(object):
 		# The region where the workload is running.  Note: this may be a different region than the 
 		# DynamodDB configuration
 		self.workloadRegion = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_REGION_KEY]
-
-		# The delay (in seconds) when scaling an instance type ahead of Starting the newly scaled instance.
-		# This is needed due to an eventual consistency issue in AWS whereby Instance.modifyAttribute() is changed
-		# and Instance.startInstance() experiences an Exception because the modifyAttribute() has not fully propogated.
-		self.scaleInstanceDelay = float(4.0)  # default to four seconds (float)
-		if( Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY in self.workloadSpecificationDict ):
-			try:
-				delayValueStr = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY]
-				self.scaleInstanceDelay = float(delayValueStr)
-			except Exception as e:
-				self.logger.warning('Couldn\'t convert %s to float. Using default of %s.  Exception was %s' % (delayValueStr, str(self.scaleInstanceDelay), str(e)) )
 
 
 		# We provision the boto3 resource here because we need to have determined the Workload Region as a dependency,
@@ -466,20 +457,36 @@ class Orchestrator(object):
 		# Filter the instances
 		# NOTE: Only instances within the specified region are returned
 		targetInstanceColl = {}
-		try:
-			targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
-
-			self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
-			for curr in targetInstanceColl:
-				self.logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
-
-		except Exception as e:
-			msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->'
-			self.logger.error(msg + str(e))
-
+		instances_filter_success=0
+		while (instances_filter_success==0):
+				try:	
+					targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
+					self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
+					instances_filter_success=1
+					for curr in targetInstanceColl:
+						self.logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
+				except Exception as e:
+					self.RetryApi(self.max_api_request)
+					msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->'
+					self.logger.error(msg + str(e))
+					self.max_api_request += 1
+					if (self.max_api_request > 10):
+						msg = '[ERROR] Maximum Retries RateLimitExceeded reached, stopping process at number of retries--> '
+						self.logger.error(msg + str(self.max_api_request))
+						exit()
 
 		return targetInstanceColl
 
+	def RetryApi(self, max_api_request):
+		self.max_api_request = max_api_request
+		try:
+			time.sleep(2*max_api_request)
+			msg = '[INFO] Throttling detected, waiting for number of seconds ---> '
+			self.logger.info(msg + str(2*self.max_api_request))
+		except Exception as e:
+			msg = 'RetryApi failed with error %s -->'
+			self.logger.error(msg + str(e))
+			
 	def makeSNSTopic(self):
 
 		if (self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]):
@@ -649,7 +656,7 @@ class Orchestrator(object):
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
 			self.logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.logger, self.dryRunFlag)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.all_elbs, self.elb, self.logger, self.dryRunFlag,self.RetryApi,self.max_api_request)
 
 			# If a ScalingProfile was specified, change the instance type now, prior to Start
 			instanceTypeToLaunch = self.isScalingAction(tierName)
