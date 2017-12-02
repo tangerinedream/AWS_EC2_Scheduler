@@ -86,13 +86,13 @@ class StartWorker(Worker):
                             except botocore.exceptions.ClientError as e:
                                 self.logger.warning("Could not deregistered instance %s from load balancer %s" % (self.instance.id, elb_name))
                                 self.logger.warning('Worker::addressELBRegistration()::deregister_instances_from_load_balancer() encountered an exception of -->' + str(e))
-                                self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(api_retry_count))
-                                self.exponentialBackoff(elb_api_retry_count)
+                                self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(elb_api_retry_count))
                                 if (elb_api_retry_count > self.max_api_request):
                                     msg = 'Maximum API Call Retries for addressELBRegistration: deregister() reached, exiting program'
                                     self.logger.error(msg + str(elb_api_retry_count))
                                     exit()
                                 else:
+                                    self.exponentialBackoff(elb_api_retry_count)
                                     elb_api_retry_count+=1
 
                         success_register_done=0
@@ -107,12 +107,13 @@ class StartWorker(Worker):
                             except botocore.exceptions.ClientError as e:
                                 self.logger.warning('Could not register instance [%s] to load balancer [%s] because of [%s]' % (self.instance.id, elb_name, str(e)))
                                 self.logger.warning('Worker::addressELBRegistration()::register_instances_with_load_balancer() encountered an exception of -->' + str(e))
-                                self.exponentialBackoff(elb_api_retry_count)
+                                self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(elb_api_retry_count))
                                 if (elb_api_retry_count > self.max_api_request):
                                     msg = 'Maximum API Call Retries for addressELBRegistration:register() reached, exiting program'
                                     self.logger.error(msg + str(elb_api_retry_count))
                                     exit()
                                 else:
+                                    self.exponentialBackoff(elb_api_retry_count)
                                     elb_api_retry_count+=1
 
 
@@ -166,6 +167,7 @@ class StartWorker(Worker):
                         instance_type_done=1
                     except Exception as e:
                         self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ modifiedInstanceType +'] resulted in -->' + str(e))
+                        self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(scale_api_retry_count))
                         if (scale_api_retry_count > self.max_api_request):
                             msg = 'Maximum Retries RateLimitExceeded reached for modifiedInstanceType , stopping process at number of retries--> '
                             self.logger.error(msg)
@@ -186,6 +188,7 @@ class StartWorker(Worker):
                         ebs_optimized_done=1
                     except Exception as e:
                         self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ ebsOptimizedAttr +'] resulted in -->' + str(e))
+                        self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(scale_api_retry_count))
                         if (ebs_optimized_done > self.max_api_request):
                             msg = 'Maximum Retries RateLimitExceeded reached for ebsOptimizedAttr, stopping process at number of retries--> '
                             self.logger.error(msg)

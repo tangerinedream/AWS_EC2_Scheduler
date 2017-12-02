@@ -471,11 +471,11 @@ class Orchestrator(object):
 					msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->'
 					self.logger.error(msg + str(e))
 					self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(api_retry_count))
-					self.exponentialBackoff(api_retry_count)
 					if (api_retry_count > self.max_api_request ):
 						self.logger.error('Maximum API Call Retries for lookupInstancesByFilter() reached, exiting program')
 						exit()
 					else:
+						self.exponentialBackoff(api_retry_count)
 						api_retry_count += 1
 
 		return targetInstanceColl
