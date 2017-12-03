@@ -173,8 +173,10 @@ class Orchestrator(object):
 		}
 
 
-
 	def initializeState(self):
+
+		# Maximum number of retries for API calls
+		self.max_api_request=8
 
 		# Log the duration of the processing
 		self.startTime = datetime.datetime.now().replace(microsecond=0)
@@ -466,20 +468,38 @@ class Orchestrator(object):
 		# Filter the instances
 		# NOTE: Only instances within the specified region are returned
 		targetInstanceColl = {}
-		try:
-			targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
-
-			self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
-			for curr in targetInstanceColl:
-				self.logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
-
-		except Exception as e:
-			msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->'
-			self.logger.error(msg + str(e))
-
+		instances_filter_done=0
+		api_retry_count=1
+		while (instances_filter_done==0):
+				try:	
+					targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
+					self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
+					if(self.logger.level==Orchestrator.LOG_LEVEL_DEBUG):
+						for curr in targetInstanceColl:
+							self.logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
+					instances_filter_done=1
+				except Exception as e:
+					msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->'
+					self.logger.error(msg + str(e))
+					if (api_retry_count > self.max_api_request ):
+						self.logger.error('Maximum API Call Retries for lookupInstancesByFilter() reached, exiting program')
+						exit()
+					else:
+						self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(api_retry_count))
+						self.exponentialBackoff(api_retry_count)
+						api_retry_count += 1
 
 		return targetInstanceColl
 
+	def exponentialBackoff(count):
+		try:
+			sleepTime = pow(float(2), float(count))
+			msg = 'exponentialBackoff(), sleeping for number of seconds ---> '
+			self.logger.info(msg + str(sleepTime))
+		except Exception as e:
+			msg = 'exponentialBackoff failed with error %s -->'
+			self.logger.error(msg + str(e))
+			
 	def makeSNSTopic(self):
 
 		if (self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]):
@@ -649,7 +669,7 @@ class Orchestrator(object):
 		self.logger.debug('In startATier() for %s', tierName)
 		for currInstance in instancesToStartList:
 			self.logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.logger, self.dryRunFlag)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.logger, self.dryRunFlag, self.exponentialBackoff, self.max_api_request)
 
 			# If a ScalingProfile was specified, change the instance type now, prior to Start
 			instanceTypeToLaunch = self.isScalingAction(tierName)
