@@ -117,6 +117,7 @@ class StartWorker(Worker):
                                 self.exponentialBackoff(elb_api_retry_count)
                                 elb_api_retry_count+=1
 
+
     def startInstance(self):
 
         result='Instance not started'
@@ -204,7 +205,6 @@ class StartWorker(Worker):
                     time.sleep(self.scalingInstanceDelay)
 
                 self.logger.info('scaleInstance() for ' + self.instance.id + ' result is %s' % result)
-
         else:
             logMsg = 'scaleInstance() requested to change instance type for non-stopped instance ' + self.instance.id + ' no action taken'
             self.logger.warning(logMsg)
