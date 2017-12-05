@@ -134,9 +134,8 @@ class StartWorker(Worker):
                 self.logger.warning('Worker::instance.start() encountered an exception of -->' + str(e))
 
     def scaleInstance(self, modifiedInstanceType):
+
         instanceState  = self.instance.state
-
-
         if (instanceState['Name'] == 'stopped'):
 
 
@@ -145,13 +144,14 @@ class StartWorker(Worker):
                 self.logger.warning('DryRun Flag is set - instance will not be scaled')
 
             else:
-                instanceType = self.instance.instance_type  # This will return as t2.xlarge for example
-                instanceFamily = instanceType.split('.')[0]  # Grab the first token after split()
                 self.logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
+
+                targetInstanceFamily = modifiedInstanceType.split('.')[0]  # Grab the first token after split()
+
                 # EC2.Instance.modify_attribute()
                 # Check and exclude non-optimized instance families. Should be enhanced to be a map.  Currently added as hotfix.
                 preventEbsOptimizedList = [ 't2' ]
-                if (instanceFamily in preventEbsOptimizedList ):
+                if (targetInstanceFamily in preventEbsOptimizedList ):
                     ebsOptimizedAttr = False
                 else:
                     ebsOptimizedAttr = self.instance.ebs_optimized    # May have been set to True or False previously
