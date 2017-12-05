@@ -188,6 +188,16 @@ class Orchestrator(object):
 		# DynamodDB configuration
 		self.workloadRegion = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_REGION_KEY]
 
+		# The delay (in seconds) when scaling an instance type ahead of Starting the newly scaled instance.
+		# This is needed due to an eventual consistency issue in AWS whereby Instance.modifyAttribute() is changed
+		# and Instance.startInstance() experiences an Exception because the modifyAttribute() has not fully propogated.
+		self.scaleInstanceDelay = float(4.0)  # default to four seconds (float)
+		if( Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY in self.workloadSpecificationDict ):
+			try:
+				delayValueStr = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY]
+				self.scaleInstanceDelay = float(delayValueStr)
+			except Exception as e:
+				self.logger.warning('Couldn\'t convert %s to float. Using default of %s.  Exception was %s' % (delayValueStr, str(self.scaleInstanceDelay), str(e)) )
 
 		# We provision the boto3 resource here because we need to have determined the Workload Region as a dependency,
 		# which is done just above in this method
