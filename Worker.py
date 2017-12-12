@@ -188,7 +188,7 @@ class StartWorker(Worker):
                         )
                         ebs_optimized_done=1
                     except Exception as e:
-                        self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ ebsOptimizedAttr +'] resulted in -->' + str(e))
+                        self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested EBS optimized flag set to ['+ str(ebsOptimizedAttr) +'] resulted in -->' + str(e))
                         if (ebs_optimized_retry_count > self.max_api_request):
                             msg = 'Maximum Retries RateLimitExceeded reached for ebsOptimizedAttr, stopping process at number of retries--> '
                             self.logger.error(msg)
