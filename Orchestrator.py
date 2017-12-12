@@ -490,11 +490,12 @@ class Orchestrator(object):
 
 		return targetInstanceColl
 
-	def exponentialBackoff(count):
+	def exponentialBackoff(self,count):
 		try:
 			sleepTime = pow(float(2), float(count))
 			msg = 'exponentialBackoff(), sleeping for number of seconds ---> '
 			self.logger.info(msg + str(sleepTime))
+                        time.sleep(sleepTime)
 		except Exception as e:
 			msg = 'exponentialBackoff failed with error %s -->'
 			self.logger.error(msg + str(e))

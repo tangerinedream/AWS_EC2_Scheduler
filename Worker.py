@@ -178,7 +178,7 @@ class StartWorker(Worker):
                             scale_api_retry_count += 1
 		
                 ebs_optimized_done=0
-                scale_api_retry_count=1
+                ebs_optimized_retry_count=1
                 while(ebs_optimized_done == 0):
                     try:
                         result = self.instance.modify_attribute(
@@ -189,15 +189,14 @@ class StartWorker(Worker):
                         ebs_optimized_done=1
                     except Exception as e:
                         self.logger.warning('Worker::instance.modify_attribute() encountered an exception where requested instance type ['+ ebsOptimizedAttr +'] resulted in -->' + str(e))
-                        self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(scale_api_retry_count))
-                        if (ebs_optimized_done > self.max_api_request):
+                        if (ebs_optimized_retry_count > self.max_api_request):
                             msg = 'Maximum Retries RateLimitExceeded reached for ebsOptimizedAttr, stopping process at number of retries--> '
                             self.logger.error(msg)
                             exit()
                         else:
-                            self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(scale_api_retry_count))
-                            self.exponentialBackoff(scale_api_retry_count)
-                            scale_api_retry_count += 1
+                            self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(ebs_optimized_retry_count))
+                            self.exponentialBackoff(ebs_optimized_retry_count)
+                            ebs_optimized_retry_count += 1
 
                     # It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
                     #    this can cause an issue on instance type change, whereby the LaunchPlan generates an exception.
