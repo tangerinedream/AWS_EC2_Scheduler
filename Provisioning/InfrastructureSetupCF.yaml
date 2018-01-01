@@ -1,0 +1,223 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  Stack creates Infrastructure for AWS_EC2_Scheduler.
+
+Parameters:
+  BucketNameParam:
+    Type: String
+    Description: >
+      Enter a bucket name for SSM to use for temporary file use.
+      Note: The bucket region must be in the same region as where the Scheduler runs,
+      as SSM does not support Cross-Region buckets
+
+Resources:
+  SchedulerSNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: Scheduler
+      TopicName: SchedulerSNSTopic
+
+  SchedulerS3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName:
+        Ref: BucketNameParam
+      LifecycleConfiguration:
+        Rules:
+          -
+            ExpirationInDays: 1
+            Status: Enabled
+            TagFilters:
+              -
+                "Key" : "AWS_EC2_Scheduler"
+                "Value" : "Lifecycle Rule for Bucket of SSM Temp Files"
+      Tags:
+        -
+          "Key" : "AWS_EC2_Scheduler"
+          "Value" : "Bucket for SSM Temp Files"
+
+  SchedulerDynamoDBWorkloadTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: WorkloadSpecification
+      AttributeDefinitions:
+        - AttributeName: SpecName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: SpecName
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - "Key" : "AWS_EC2_Scheduler"
+          "Value" : "Workload Definition"
+
+  SchedulerDynamoDBTierTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: TierSpecification
+      AttributeDefinitions:
+        - AttributeName: SpecName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: SpecName
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 2
+        WriteCapacityUnits: 1
+      Tags:
+        - "Key" : "AWS_EC2_Scheduler"
+          "Value" : "Tier Definition"
+
+  SchedulerSNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: Scheduler
+      TopicName: SchedulerSNSTopic
+
+  SchedulerS3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName:
+        Ref: BucketNameParam
+      LifecycleConfiguration:
+        Rules:
+          -
+            ExpirationInDays: 1
+            Status: Enabled
+            TagFilters:
+              -
+                "Key" : "AWS_EC2_Scheduler"
+                "Value" : "Lifecycle Rule for Bucket of SSM Temp Files"
+      Tags:
+        -
+          "Key" : "AWS_EC2_Scheduler"
+          "Value" : "Bucket for SSM Temp Files"
+
+  SchedulerDynamoDBWorkloadTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: WorkloadSpecification
+      AttributeDefinitions:
+        - AttributeName: SpecName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: SpecName
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - "Key" : "AWS_EC2_Scheduler"
+          "Value" : "Workload Definition"
+
+  SchedulerDynamoDBTierTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: TierSpecification
+      AttributeDefinitions:
+        - AttributeName: SpecName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: SpecName
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 2
+        WriteCapacityUnits: 1
+      Tags:
+        - "Key" : "AWS_EC2_Scheduler"
+          "Value" : "Tier Definition"
+
+  SchedulerIAMPolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      Description: "Stack creates Infrastructure for AWS_EC2_Scheduler"
+      ManagedPolicyName: AWS-EC2-Scheduler-IAM-Policy
+      PolicyDocument: {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+              "Sid": "ec2Statement",
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeInstanceStatus",
+                  "ec2:DescribeInstances",
+                  "ec2:ModifyInstanceAttribute",
+                  "ec2:DescribeTags",
+                  "ec2:StartInstances",
+                  "ec2:StopInstances",
+                  "elasticloadbalancing:DescribeLoadBalancers",
+                  "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                  "elasticloadbalancing:DeregisterInstancesFromLoadBalancer"
+              ],
+              "Resource": [
+                  "*"
+              ]
+          },
+          {
+              "Sid": "SNSPublicationStatement",
+              "Effect": "Allow",
+              "Action": [
+                  "sns:Publish",
+                  "sns:CreateTopic"
+              ],
+              "Resource": {
+                "Ref":"SchedulerSNSTopic"
+              }
+          },
+          {
+              "Sid": "s3Statement",
+              "Effect": "Allow",
+                    "Action": [
+                  "s3:GetObject",
+                  "s3:ListBucket",
+                  "s3:GetBucketLocation"
+              ],
+              "Resource": [
+                  {
+                    "Fn::GetAtt" : [ "SchedulerS3Bucket", "Arn" ]
+                  },
+                  {
+                    "Fn::Join": [
+                      "",
+                      [
+                        { "Fn::GetAtt" : [ "SchedulerS3Bucket", "Arn" ]  },
+                         "/*"
+                      ]
+                    ]
+                  }
+              ]
+          },
+          {
+              "Sid": "DynamoDBStatement",
+              "Effect": "Allow",
+              "Action": [
+                  "dynamodb:GetItem",
+                  "dynamodb:Query"
+              ],
+              "Resource": [
+                { "Fn::GetAtt" : [ "SchedulerDynamoDBWorkloadTable", "Arn" ] },
+                { "Fn::GetAtt" : [ "SchedulerDynamoDBTierTable", "Arn" ] }
+              ]
+          },
+          {
+              "Sid": "SSMStatement",
+              "Effect": "Allow",
+              "Action": [
+                  "ssm:SendCommand",
+                  "ssm:ListDocuments",
+                  "ssm:DescribeDocument",
+                  "ssm:GetDocument",
+                  "ssm:DescribeInstanceInformation",
+                  "ssm:CancelCommand",
+                  "ssm:ListCommands",
+                  "ssm:ListCommandInvocations"
+              ],
+              "Resource": [
+                  "*"
+              ]
+          }
+        ]
+      }
