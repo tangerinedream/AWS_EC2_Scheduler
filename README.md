@@ -233,9 +233,10 @@ No **Action** will be taken. For example, the Stop will *not* execute as the Dry
 
 
 ### Provided Example Workload
-*Note* If you would like to contribute to this project, this is a nice piece to carve out.  It would be helpful to craft a simply python script to automate the following.
+There is a provided CloudFormation Template _Provisioning/TestWorkloadInstances_CF.yaml_ available, that provisions 4 instances for you to test with.  The instances are t2.nanos to minimize cost. 
 
 Here is an example workload to get you quickly up to speed.  The steps are very straight forward.  Simply copy/paste each JSON blob into the named Table using the Management Console (or use the cli if you prefer).
+*Note* If you would like to contribute to this project, this is a nice piece to carve out.  It would be helpful to craft a simply python script to automate the following.
 
 #### Steps
 1. Add a DynamoDB Item to the WorkloadSpecification table.  Click "Create Item" on Workload Table, change "Tree" to "Text" and paste in the following:
