@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  This CloudFormation template will launch 4 t2.nano instances in the region of your choosing.
+  The four instances will be split into 3 tiers, aligned to the documentation of the AWS_EC2_Scheduler:
+  1. 2 instances, members of the "Role_Web" Tier of Workload ENV001,
+  2. 1 instance member of the "Role_App" Tier of Workload ENV001, and
+  3. 1 instance member of the "Role_DB" Tier of Workload ENV001.
+  These are test instances solely for testing your scheduler, not for actually running an application.
+  You may want to modify the AMIs listed below and/or supplement the Mappings section to accommodate additional regions
+Parameters:
+  SecurityGroupParam:
+    Type: "String"
+    Description: "Enter the VPC Security Group ID (e.g. sg-xxxxxx) to wrap around your test instances"
+  SubnetParam:
+    Type: "String"
+    Description: "Enter the VPC Subnet ID (e.g. subnet-xxxxxx) to place your test instances"
+Mappings:
+  RegionMap:
+    # ToDo:
+    #   1. add more regions
+    #   2. Modify over time as the AMIs will expire
+    # These are all 64 bit Ubuntu v16+, change as you see fit
+    us-east-1:
+      "64": "ami-aa2ea6d0"
+    us-west-2:
+      "64": "ami-0def3275"
+    eu-west-1:
+      "64": "ami-8fd760f6"
+Resources:
+  TestWebInstance1:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.nano"
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", 64]
+      SecurityGroupIds:
+        - Ref: SecurityGroupParam
+      SubnetId:
+        Ref: SubnetParam
+      Tags:
+        - Key : "Name"
+          Value : "WebServerOne"
+        - Key : "Workload"
+          Value : "ENV001"
+        - Key : "ApplicationRole"
+          Value : "Role_Web"
+  TestWebInstance2:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.nano"
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", 64]
+      SecurityGroupIds:
+        - Ref: SecurityGroupParam
+      SubnetId:
+        Ref: SubnetParam
+      Tags:
+        - Key : "Name"
+          Value : "WebServerTwo"
+        - Key : "Workload"
+          Value : "ENV001"
+        - Key : "ApplicationRole"
+          Value : "Role_Web"
+  TestAppInstance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.nano"
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", 64]
+      SecurityGroupIds:
+        - Ref: SecurityGroupParam
+      SubnetId:
+        Ref: SubnetParam
+      Tags:
+        - Key : "Name"
+          Value : "AppServer"
+        - Key : "Workload"
+          Value : "ENV001"
+        - Key : "ApplicationRole"
+          Value : "Role_App"
+  TestDBInstance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.nano"
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", 64]
+      SecurityGroupIds:
+        - Ref: SecurityGroupParam
+      SubnetId:
+        Ref: SubnetParam
+      Tags:
+        - Key : "Name"
+          Value : "DBServer"
+        - Key : "Workload"
+          Value : "ENV001"
+        - Key : "ApplicationRole"
+          Value : "Role_DB"
