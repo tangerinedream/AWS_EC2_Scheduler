@@ -1,18 +1,21 @@
 #!/usr/bin/python
 import boto3
 import json
-import logging
-import logging.handlers
 import time
 import datetime
 import argparse
+import Utils
+import logging 
 
 from distutils.util import strtobool
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 from Worker import Worker, StopWorker, StartWorker
+from Utils import RetryNotifier
 
 __author__ = "Gary Silverman"
+
+logger = logging.getLogger('Orchestrator') #The Module Name
 
 class Orchestrator(object):
 
@@ -67,10 +70,8 @@ class Orchestrator(object):
 	LOG_LEVEL_INFO='info'
 	LOG_LEVEL_DEBUG='debug'
 
-	def __init__(self, partitionTargetValue, loglevel, dynamoDBRegion, scalingProfile, dryRun=False):
+	def __init__(self, partitionTargetValue, dynamoDBRegion, scalingProfile, dryRun=False):
 
-		self.partitionTargetValue=partitionTargetValue  # must be set prior to invoking initlogging()
-		self.initLogging(loglevel)
 
 		# default to us-west-2
 		self.dynamoDBRegion=dynamoDBRegion 
@@ -78,7 +79,9 @@ class Orchestrator(object):
 
 		# The commmand line param will be passed as a string
 		self.dryRunFlag=dryRun
-		
+	
+		self.partitionTargetValue=partitionTargetValue  # must be set prior to invoking initlogging()
+	
 		###
 		# DynamoDB Table Related
 		#
@@ -86,7 +89,7 @@ class Orchestrator(object):
 			self.dynDBC = boto3.client('dynamodb', region_name=self.dynamoDBRegion)
 		except Exception as e:
 			msg = 'Orchestrator::__init__() Exception obtaining botot3 dynamodb client in region %s -->' % self.workloadRegion
-			self.logger.error(msg + str(e))
+			logger.error(msg + str(e))
 
 		
 
@@ -120,7 +123,7 @@ class Orchestrator(object):
 			self.tierSpecTable = self.dynDBR.Table(self.tierSpecTableName)
 		except Exception as e:
 			msg = 'Orchestrator::__init__() Exception obtaining botot3 dynamodb resource in region %s -->' % self.workloadRegion
-			self.logger.error(msg + str(e))
+			logger.error(msg + str(e))
 
 		# Create a List of valid dynamoDB attributes to address user typos in dynamoDB table
 		self.tierSpecificationValidAttributeList = [
@@ -142,11 +145,6 @@ class Orchestrator(object):
 
 		#
 		###
-
-		# Get the SNS Topic
-		self.snsTopicR = boto3.resource('sns', region_name=dynamoDBRegion)
-		self.snsTopic = ''
-		self.snsNotConfigured=False
 
 		self.startTime=0
 		self.finishTime=0
@@ -172,7 +170,6 @@ class Orchestrator(object):
 			80: "stopped"
 		}
 
-
 	def initializeState(self):
 
 		# Maximum number of retries for API calls
@@ -186,8 +183,10 @@ class Orchestrator(object):
 
 		# The region where the workload is running.  Note: this may be a different region than the 
 		# DynamodDB configuration
-		self.workloadRegion = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_REGION_KEY]
-
+		try:
+			self.workloadRegion = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_REGION_KEY]
+		except Exception as e:
+			logger.warning('Orchestrator.py::initializeState() Error obtaining self.workloadRegion --> %s' % str(e))
 		# The delay (in seconds) when scaling an instance type ahead of Starting the newly scaled instance.
 		# This is needed due to an eventual consistency issue in AWS whereby Instance.modifyAttribute() is changed
 		# and Instance.startInstance() experiences an Exception because the modifyAttribute() has not fully propogated.
@@ -197,7 +196,7 @@ class Orchestrator(object):
 				delayValueStr = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY]
 				self.scaleInstanceDelay = float(delayValueStr)
 			except Exception as e:
-				self.logger.warning('Couldn\'t convert %s to float. Using default of %s.  Exception was %s' % (delayValueStr, str(self.scaleInstanceDelay), str(e)) )
+				logger.warning('Couldn\'t convert %s to float. Using default of %s.  Exception was %s' % (delayValueStr, str(self.scaleInstanceDelay), str(e)) )
 
 		# We provision the boto3 resource here because we need to have determined the Workload Region as a dependency,
 		# which is done just above in this method
@@ -205,23 +204,33 @@ class Orchestrator(object):
 			self.ec2R = boto3.resource('ec2', region_name=self.workloadRegion)
 		except Exception as e:
 			msg = 'Orchestrator::initializeState() Exception obtaining botot3 ec2 resource in region %s -->' % self.workloadRegion
-			self.logger.error(msg + str(e))
+			logger.error(msg + str(e))
 
 		try:
 			self.elb = boto3.client('elb', region_name=self.workloadRegion)
 		except Exception as e:
 			msg = 'Orchestrator::__init__() Exception obtaining botot3 elb client in region %s -->' % self.workloadRegion
-			self.logger.error(msg + str(e))
+			logger.error(msg + str(e))
 
-		try:
-			self.all_elbs = self.elb.describe_load_balancers()
-			msg = 'Orchestrator::__init() Found attached ELBs-->'
-		except Exception as e:
-			self.all_elbs = "0"
-			msg = 'Orchestrator:: Exception obtaining all ELBs in region %s -->' % self.workloadRegion
-			self.logger.error(msg + str(e))
 		# Grab tier specific workload information from DynamoDB
-		self.lookupTierSpecs(self.partitionTargetValue)
+                self.lookupTierSpecs(self.partitionTargetValue)
+
+	def lookupELBs(self):
+
+		success_describe_elbs_done = 0
+                describe_elb_api_retry_count = 1
+		while (success_describe_elbs_done == 0):
+			try:
+				self.all_elbs = self.elb.describe_load_balancers()
+				msg = 'Orchestrator::__init() Found attached ELBs-->'
+				success_describe_elbs_done = 1
+			except Exception as e:
+				self.all_elbs = "0"
+				msg = 'Orchestrator:: Exception obtaining all ELBs in region %s --> %s' % (self.workloadRegion,e)
+				subject_prefix = "Scheduler Exception in %s" % self.workloadRegion
+				logger.error(msg + str(e))
+				self.snsInit.exponentialBackoff(describe_elb_api_retry_count,msg,subject_prefix)
+				describe_elb_api_retry_count += 1
 
 	def lookupWorkloadSpecification(self, partitionTargetValue):
 		try:
@@ -234,7 +243,7 @@ class Orchestrator(object):
 				ReturnConsumedCapacity="TOTAL",
 			)
 		except ClientError as e:
-			self.logger.error('lookupWorkloadSpecification()' + e.response['Error']['Message'])
+			logger.error('lookupWorkloadSpecification()' + e.response['Error']['Message'])
 		else:
 			# Get the dynamoDB Item from the result
 			resultItem=dynamodbItem['Item']
@@ -244,10 +253,10 @@ class Orchestrator(object):
 				# Validate the attributes entered into DynamoDB are valid.  If not, spit out individual warning messages
 				if( attributeName in self.workloadSpecificationValidAttributeList ):
 					attributeValue=resultItem[attributeName].values()[0]
-					self.logger.info('Workload Attribute [%s maps to %s]' % (attributeName, attributeValue))
+					logger.info('Workload Attribute [%s maps to %s]' % (attributeName, attributeValue))
 					self.workloadSpecificationDict[attributeName]=attributeValue
 				else:
-					self.logger.warning('Invalid dynamoDB attribute specified->'+str(attributeName)+'<- will be ignored')
+					logger.warning('Invalid dynamoDB attribute specified->'+str(attributeName)+'<- will be ignored')
 
 
 	def recursiveFindKeys(self, sourceDict, resList):
@@ -271,21 +280,21 @@ class Orchestrator(object):
 				ReturnConsumedCapacity="TOTAL",
 			)
 		except ClientError as e:
-			self.logger.error('Exception encountered in lookupTierSpecs() -->' + str(e))
+			logger.error('Exception encountered in lookupTierSpecs() -->' + str(e))
 		else:
 			# Get the items from the result
 			resultItems=dynamodbItem['Items']
 
 			# Create a Dictionary that stores the currTier and currTier associated with Tiers
 			for currTier in resultItems:
-				self.logger.info('DynamoDB Query for Tier->'+ currTier[Orchestrator.TIER_NAME])
+				logger.info('DynamoDB Query for Tier->'+ currTier[Orchestrator.TIER_NAME])
 
 				tierKeys=[]
 				self.recursiveFindKeys(currTier, tierKeys)
 				setDiff = set(tierKeys).difference(self.tierSpecificationValidAttributeList)
 				if( setDiff ):
 					for badAttrKey in setDiff:
-						self.logger.warning('Invalid dynamoDB attribute specified->'+str(badAttrKey)+'<- will be ignored')
+						logger.warning('Invalid dynamoDB attribute specified->'+str(badAttrKey)+'<- will be ignored')
 
 				self.tierSpecDict[currTier[Orchestrator.TIER_NAME]] = {}
 				# Pull out the Dictionaries for each of the below. 
@@ -313,14 +322,14 @@ class Orchestrator(object):
 
 		# tierAction indicates whether it is a TIER_STOP, or TIER_START, as they may have different sequences
 		for currKey, currAttributes in self.tierSpecDict.iteritems():
-			self.logger.debug('sequenceTiers() Action=%s, currKey=%s, currAttributes=%s)' % (tierAction, currKey, currAttributes) )
+			logger.debug('sequenceTiers() Action=%s, currKey=%s, currAttributes=%s)' % (tierAction, currKey, currAttributes) )
 			
 			# Grab the Tier Name first
 			tierName = currKey
 			#tierName = currAttributes[Orchestrator.TIER_NAME]
 
 			tierAttributes={}	# do I need to scope this variable as such?
-			self.logger.debug('In sequenceTiers(), tierAction is %s' % tierAction)
+			logger.debug('In sequenceTiers(), tierAction is %s' % tierAction)
 			if( tierAction == Orchestrator.TIER_STOP):
 				# Locate the TIER_STOP Dictionary
 				tierAttributes = currAttributes[Orchestrator.TIER_STOP]
@@ -328,25 +337,25 @@ class Orchestrator(object):
 			elif( tierAction == Orchestrator.TIER_START ):
 				tierAttributes = currAttributes[Orchestrator.TIER_START]
 
-			#self.logger.info('In sequenceTiers(): tierAttributes is ', tierAttributes )
+			#logger.info('In sequenceTiers(): tierAttributes is ', tierAttributes )
 
 
 			# Insert into the List 
 			self.sequencedTiersList[ int( tierAttributes[Orchestrator.TIER_SEQ_NBR ] ) ] = tierName
 
-		self.logger.debug('Sequence List for Action %s is %s' % (tierAction, self.sequencedTiersList))
+		logger.debug('Sequence List for Action %s is %s' % (tierAction, self.sequencedTiersList))
 			
 		return( self.sequencedTiersList )
 	
 
 	def logSpecDict(self, label, dict, level):
 		# for key, value in self.workloadSpecificationDict.iteritems():
-		# 	self.logger.debug('%s (key==%s, value==%s)' % (label, key, value))
+		# 	logger.debug('%s (key==%s, value==%s)' % (label, key, value))
 		for key, value in dict.iteritems():
 			if( level == Orchestrator.LOG_LEVEL_INFO ):
-				self.logger.info('%s (key==%s, value==%s)' % (label, key, value))
+				logger.info('%s (key==%s, value==%s)' % (label, key, value))
 			else:
-				self.logger.debug('%s (key==%s, value==%s)' % (label, key, value))
+				logger.debug('%s (key==%s, value==%s)' % (label, key, value))
 
 	def isTierSynchronized(self, tierName, tierAction):
 		# Get the Tier Named tierName
@@ -369,7 +378,7 @@ class Orchestrator(object):
 		else:
 			res = False
 
-		self.logger.debug('isTierSynchronized for tierName==%s, tierAction==%s is syncFlag==%s' % (tierName, tierAction, res) )
+		logger.debug('isTierSynchronized for tierName==%s, tierAction==%s is syncFlag==%s' % (tierName, tierAction, res) )
 		return( res )
 
 	def getTierStopOverrideFilename(self, tierName):
@@ -432,12 +441,12 @@ class Orchestrator(object):
 	def lookupInstancesByFilter(self, targetInstanceStateKey, tierName):
 	    # Use the filter() method of the instances collection to retrieve
 	    # all running EC2 instances.
-		self.logger.debug('lookupInstancesByFilter() seeking instances in tier %s' % tierName)
-		self.logger.debug('lookupInstancesByFilter() instance state %s' % targetInstanceStateKey)
-		self.logger.debug('lookupInstancesByFilter() tier tag key %s' % self.workloadSpecificationDict[Orchestrator.TIER_FILTER_TAG_KEY])
-		self.logger.debug('lookupInstancesByFilter() tier tag value %s' % tierName)
-		self.logger.debug('lookupInstancesByFilter() Env tag key %s' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_KEY])
-		self.logger.debug('lookupInstancesByFilter() Env tag value %s' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE])
+		logger.debug('lookupInstancesByFilter() seeking instances in tier %s' % tierName)
+		logger.debug('lookupInstancesByFilter() instance state %s' % targetInstanceStateKey)
+		logger.debug('lookupInstancesByFilter() tier tag key %s' % self.workloadSpecificationDict[Orchestrator.TIER_FILTER_TAG_KEY])
+		logger.debug('lookupInstancesByFilter() tier tag value %s' % tierName)
+		logger.debug('lookupInstancesByFilter() Env tag key %s' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_KEY])
+		logger.debug('lookupInstancesByFilter() Env tag value %s' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE])
 
 
 		targetFilter = [
@@ -462,69 +471,31 @@ class Orchestrator(object):
 		        'Values': [self.workloadSpecificationDict[Orchestrator.WORKLOAD_VPC_ID_KEY]]
 			}
 			targetFilter.append(vpc_filter_dict_element)
-			self.logger.debug('VPC_ID provided, Filter List is %s' % str(targetFilter))
+			logger.debug('VPC_ID provided, Filter List is %s' % str(targetFilter))
 
 		# Filter the instances
 		# NOTE: Only instances within the specified region are returned
 		targetInstanceColl = {}
 		instances_filter_done=0
-		api_retry_count=1
+		filter_instances_api_retry_count=1
 		while (instances_filter_done==0):
 				try:	
 					targetInstanceColl = self.ec2R.instances.filter(Filters=targetFilter)
-					self.logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
-					if(self.logger.level==Orchestrator.LOG_LEVEL_DEBUG):
+					logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
+					if(logger.level==Orchestrator.LOG_LEVEL_DEBUG):
 						for curr in targetInstanceColl:
-							self.logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
+							logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
 					instances_filter_done=1
 				except Exception as e:
 					msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->'
-					self.logger.error(msg + str(e))
-					if (api_retry_count > self.max_api_request ):
-						self.logger.error('Maximum API Call Retries for lookupInstancesByFilter() reached, exiting program')
-						exit()
-					else:
-						self.logger.warning('Exponential Backoff in progress, retry count = %s' % str(api_retry_count))
-						self.exponentialBackoff(api_retry_count)
-						api_retry_count += 1
+					logger.error(msg + str(e))
+					subject_prefix = "Scheduler Exception in %s" % self.workloadRegion
+					self.snsInit.exponentialBackoff(filter_instances_api_retry_count,msg,subject_prefix)
+					filter_instances_api_retry_count += 1
 
 		return targetInstanceColl
 
-	def exponentialBackoff(self,count):
-		try:
-			sleepTime = pow(float(2), float(count))
-			msg = 'exponentialBackoff(), sleeping for number of seconds ---> '
-			self.logger.info(msg + str(sleepTime))
-                        time.sleep(sleepTime)
-		except Exception as e:
-			msg = 'exponentialBackoff failed with error %s -->'
-			self.logger.error(msg + str(e))
 			
-	def makeSNSTopic(self):
-
-		if (self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]):
-
-			# Make or retrieve the SNS Topic setup.  Method is Idempotent
-			try:
-				self.snsTopic = self.snsTopicR.create_topic( Name=self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME] )
-				self.snsTopicSubjectLine = self.makeSNSTopicSubjectLine()
-
-			except Exception as e:
-				self.logger.error('orchestrate() - creating SNS Topic ' + str(e) )
-				self.snsNotConfigured=True
-		else:
-			self.snsNotConfigured=True
-
-	def publishSNSTopic(self, subject, message):
-		try:
-			self.snsTopic.publish(
-				Subject=subject,
-				Message=message,
-			)
-
-		except Exception as e:
-			self.logger.error('publishSNSTopicMessage() ' + str(e) )
-
 	def isKillSwitch(self):
 
 		res = False
@@ -533,7 +504,7 @@ class Orchestrator(object):
 			switchValue = self.workloadSpecificationDict[Orchestrator.WORKLOAD_KILL_SWITCH]
 
 			if( switchValue == Orchestrator.WORKLOAD_KILL_SWITCH_TRUE ):
-				self.logger.warning('Kill Switch found.  All scheduling actions on the workload will be bypassed')
+				logger.warning('Kill Switch found.  All scheduling actions on the workload will be bypassed')
 				res = True
 
 		return( res )
@@ -547,7 +518,6 @@ class Orchestrator(object):
 		3) Log
 		'''
 
-		self.makeSNSTopic()
 
 		killSwitch = self.isKillSwitch()
 
@@ -564,42 +534,40 @@ class Orchestrator(object):
 
 				for currTier in self.sequencedTiersList:
 				
-					self.logger.info('Orchestrate() Stopping Tier: ' + currTier)
+					logger.info('Orchestrate() Stopping Tier: ' + currTier)
 				
 					# Stop the next tier in the sequence
 					self.stopATier(currTier)
 					
 
 			elif( action == Orchestrator.ACTION_START ): 
-				
+				orchMain.lookupELBs()
+	
 				# Sequence the tiers per the START order
 				self.sequenceTiers(Orchestrator.TIER_START)
 				
 				for currTier in self.sequencedTiersList:
 				
-					self.logger.info('Orchestrate() Starting Tier: ' + currTier)
+					logger.info('Orchestrate() Starting Tier: ' + currTier)
 				
 					# Start the next tier in the sequence
 					self.startATier(currTier)
 
 			elif( action not in self.validActionNames ):
 				
-				self.logger.warning('Action requested %s not a valid choice of ', self.validActionNames)
+				logger.warning('Action requested %s not a valid choice of ', self.validActionNames)
 			
 			else:
 			
-				self.logger.warning('Action requested %s is not yet implemented. No action taken', action)	
+				logger.warning('Action requested %s is not yet implemented. No action taken', action)	
 
 		# capture completion time
 		self.finishTime = datetime.datetime.now().replace(microsecond=0)
 
-		self.logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
-		self.logger.info('++ Completed processing ['+ action +'][' + self.partitionTargetValue + ']<- in ' + str(self.finishTime - self.startTime) + ' seconds')
-		self.logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+		logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
+		logger.info('++ Completed processing ['+ action +'][' + self.partitionTargetValue + ']<- in ' + str(self.finishTime - self.startTime) + ' seconds')
+		logger.info('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++')
 	
-	def makeSNSTopicSubjectLine(self):
-		res = 'AWS_EC2_Scheduler Notification:  Workload==>' + self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
-		return( res )	    
 
 	def stopATier(self, tierName):
 		'''
@@ -626,8 +594,9 @@ class Orchestrator(object):
 		# Grab the EC2 region (not DynamodDB region) for the worker to make API calls
 		#region=self.workloadSpecificationDict[self.WORKLOAD_SPEC_REGION_KEY]
 
+
 		for currInstance in instancesToStopList:
-			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.logger, self.dryRunFlag)
+			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.max_api_request,self.snsInit)
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
 				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME],
@@ -666,10 +635,11 @@ class Orchestrator(object):
 		# Grab the region the worker should make API calls against
 		#region=self.workloadSpecificationDict[self.WORKLOAD_SPEC_REGION_KEY]
 
-		self.logger.debug('In startATier() for %s', tierName)
+		logger.debug('In startATier() for %s', tierName)
+
 		for currInstance in instancesToStartList:
-			self.logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, self.snsNotConfigured, self.snsTopic, self.snsTopicSubjectLine, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.logger, self.dryRunFlag, self.exponentialBackoff, self.max_api_request)
+			logger.debug('Starting instance %s', currInstance)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.dryRunFlag, self.max_api_request,self.snsInit)
 
 			# If a ScalingProfile was specified, change the instance type now, prior to Start
 			instanceTypeToLaunch = self.isScalingAction(tierName)
@@ -683,20 +653,20 @@ class Orchestrator(object):
 		# It may make sense to allow some amount of time for the instances to Stop, prior to Orchestration continuing.
 		time.sleep(self.getInterTierOrchestrationDelay(tierName, Orchestrator.TIER_START))
 
-		self.logger.debug('startATier() completed for tier %s' % tierName)
+		logger.debug('startATier() completed for tier %s' % tierName)
 
 	def isScalingAction(self, tierName):
 
 		# First, is the ScalingProfile flag even set ?
 		if(self.scalingProfile):
-			self.logger.debug('ScalingProfile requested')
+			logger.debug('ScalingProfile requested')
 
 			# Unpack the ScalingDictionary
 			tierAttributes = self.tierSpecDict[tierName]
 			if( Orchestrator.TIER_SCALING in tierAttributes):
 
 				scalingDict = tierAttributes[ Orchestrator.TIER_SCALING ]
-				self.logger.debug('ScalingProfile for Tier %s is %s ' % (tierName, str(scalingDict) ))
+				logger.debug('ScalingProfile for Tier %s is %s ' % (tierName, str(scalingDict) ))
 
 				# Ok, so next, does this tier have a Scaling Profile?
 				if( self.scalingProfile in scalingDict ):
@@ -704,51 +674,15 @@ class Orchestrator(object):
 					instanceType = scalingDict[self.scalingProfile]
 					return instanceType
 				else:
-					self.logger.warning('Scaling Profile of [%s] not in tier [%s] ' % (str(self.scalingProfile), tierName ) )
+					logger.warning('Scaling Profile of [%s] not in tier [%s] ' % (str(self.scalingProfile), tierName ) )
 
 			else:
-				self.logger.warning('Scaling Profile of [%s] specified but no TierScaling dictionary found in DynamoDB for tier [%s].  No scaling action taken' % (str(self.scalingProfile), tierName) )
+				logger.warning('Scaling Profile of [%s] specified but no TierScaling dictionary found in DynamoDB for tier [%s].  No scaling action taken' % (str(self.scalingProfile), tierName) )
 
 		return( None )
 
-	def initLogging(self, loglevel):
-		# Setup the Logger
-		self.logger = logging.getLogger('Orchestrator')  #The Module Name
-
-		# Set logging level
-		loggingLevelSelected = logging.INFO
-
-		# Set logging level
-		if( loglevel == 'critical' ):
-			loggingLevelSelected=logging.CRITICAL
-		elif( loglevel == 'error' ):
-			loggingLevelSelected=logging.ERROR
-		elif( loglevel == 'warning' ):
-			loggingLevelSelected=logging.WARNING
-		elif( loglevel == 'info' ):
-			loggingLevelSelected=logging.INFO
-		elif( loglevel == 'debug' ):
-			loggingLevelSelected=logging.DEBUG
-		elif( loglevel == 'notset' ):
-			loggingLevelSelected=logging.NOTSET
-
-		filenameVal='Orchestrator_' + self.partitionTargetValue + '.log' 
-
-		log_formatter = logging.Formatter('[%(asctime)s][%(levelname)s][%(module)s:%(funcName)s()][%(lineno)d]%(message)s')
-
-		# Add the rotating file handler
-		handler = logging.handlers.RotatingFileHandler(
-			filename=filenameVal,
-			mode='a',
-			maxBytes=128 * 1024,
-			backupCount=10)
-		handler.setFormatter(log_formatter)
-
-		self.logger.addHandler(handler)
-		self.logger.setLevel(loggingLevelSelected)
-
 	def runTestCases(self):
-		self.logger.info('Executing runTestCases()')
+		logger.info('Executing runTestCases()')
 		
 		self.initializeState()
 
@@ -756,17 +690,27 @@ class Orchestrator(object):
 		# print 'Role_AppServer override file loc ', self.getTierStopOverrideFilename('Role_AppServer')
 		# print 'Role_DB override file loc ', self.getTierStopOverrideFilename('Role_DB')
 		# Test Case: Stop an Environment
-		self.logger.info('\n### Orchestrating START Action ###')
+		logger.info('\n### Orchestrating START Action ###')
 		self.orchestrate(Orchestrator.ACTION_START )
 
 		# Test Case: Start an Environment
 		sleepSecs=20
-		self.logger.info('\n### Sleeping for ' + str(sleepSecs) + ' seconds ###')
+		logger.info('\n### Sleeping for ' + str(sleepSecs) + ' seconds ###')
 		time.sleep(sleepSecs)
 
-		self.logger.info('\n### Orchestrating STOP Action ###')
+		logger.info('\n### Orchestrating STOP Action ###')
 		self.orchestrate(Orchestrator.ACTION_STOP )
 
+	def sns_init(self):
+		try:
+			sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
+			sns_workload = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
+			self.snsInit = RetryNotifier(self.workloadRegion,sns_workload,self.max_api_request)
+			self.snsInit.makeTopic(sns_topic_name)
+#		else:
+		except Exception as e: 
+			logger.info('Orchestrator::sns_init() sns_topic_name must be defined in DynamoDB --> ' + str(e))
+			exit()
 
 if __name__ == "__main__":
 	# python Orchestrator.py -i workloadIdentier -r us-west-2
@@ -793,7 +737,11 @@ if __name__ == "__main__":
 		dryRun = False
 
 	# Launch the Orchestrator - the main component of the subsystem
-	orchMain = Orchestrator(args.workloadIdentifier, loglevel, args.dynamoDBRegion, args.scalingProfile, dryRun)
+
+	Utils.initLogging(args.loglevel,args.workloadIdentifier)
+
+	orchMain = Orchestrator(args.workloadIdentifier, args.dynamoDBRegion, args.scalingProfile, dryRun)
+
 
 	# If testcases set, run them, otherwise run the supplied Action only
 	if( args.testcases > 0 ):	
@@ -806,8 +754,9 @@ if __name__ == "__main__":
 		else:
 			action = Orchestrator.ACTION_START
 
-		orchMain.logger.info('\n### Orchestrating %s' % action +' Action ###')
+		logger.info('\n### Orchestrating %s' % action +' Action ###')
 		orchMain.initializeState()
+		orchMain.sns_init()
 		orchMain.orchestrate(action)
 
 	
