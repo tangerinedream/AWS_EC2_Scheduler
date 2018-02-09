@@ -35,20 +35,24 @@ class RetryNotifier():
         	        tagsMsg=''
 			publish_message_done=0
 	                publish_message_api_retry_count=1
+			self.subjectPrefix = subjectPrefix
 			while (publish_message_done == 0):
 
-	                	try:
+	                	try:	
+					self.subject_message = self.snsTopicSubjectLine + ':' + self.subjectPrefix
+					if len(self.subject_message) > 99:
+						logger.warning("SNS Subject too long, truncating to 99 characters - original message ->" + self.subject_message)
+						self.subject_message = self.subject_message[:99]
 		                    	self.snsTopic.publish(
-      		                	Subject=self.snsTopicSubjectLine + ':' + subjectPrefix,
-	        		                Message=theMessage + "\n" + tagsMsg,
-       	        		)
+      		                	    Subject=self.subject_message,
+	        		            Message=theMessage + "\n" + tagsMsg
+       	        			)
 					publish_message_done=1
 	                	except Exception as e:
         	                	logger.error('publishSNSTopicMessage() ' + str(e) )
 					if (publish_message_api_retry_count > self.max_api_request ):
 						msg = 'Maximum API Call Retries for snsTopic.publish() reached, exiting program'
 						logger.error(msg + str(publish_message_api_retry_count))
-						exit()					
 					else:
 						publish_message_api_retry_count+=1
 	                                        logger.warning('Exponential Backoff in progress for snsTopic.publish(), retry count = %s' % str(publish_message_api_retry_count))

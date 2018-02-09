@@ -487,7 +487,7 @@ class Orchestrator(object):
 							logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
 					instances_filter_done=1
 				except Exception as e:
-					msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->'
+					msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->' % e
 					logger.error(msg + str(e))
 					subject_prefix = "Scheduler Exception in %s" % self.workloadRegion
 					self.snsInit.exponentialBackoff(filter_instances_api_retry_count,msg,subject_prefix)

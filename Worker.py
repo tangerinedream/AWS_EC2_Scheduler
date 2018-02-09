@@ -66,7 +66,7 @@ class StartWorker(Worker):
                             success_deregister_done=1
                         except Exception as e:
                             logger.warning('Worker::addressELBRegistration()::deregister_instances_from_load_balancer() encountered an exception of -->' + str(e))
-			    subject_prefix = "Scheduler exception - deregister ELB"
+			    subject_prefix = "Exception - deregister ELB"
 			    msg = "Exponential Backoff in progress for deregister_instances_from_load_balancer - EC2 instance %s, sleeping %s seconds" % (self.instance,elb_api_retry_count)
 			    self.snsInit.exponentialBackoff(elb_api_retry_count,msg,subject_prefix)
 			    elb_api_retry_count+=1
@@ -81,7 +81,7 @@ class StartWorker(Worker):
 			except Exception as e:
 			    logger.warning('Worker::addressELBRegistration()::register_instances_with_load_balancer() encountered an exception of -->' + str(e))
                             msg = "Exponential Backoff in progress for register_instances_from_load_balancer - EC2 instance %s, sleeping %s seconds" % (self.instance,elb_api_retry_count)
-                            subject_prefix = "Scheduler exception - register ELB"
+                            subject_prefix = "Exception - register ELB"
                             self.snsInit.exponentialBackoff(elb_api_retry_count,msg,subject_prefix)
                             elb_api_retry_count+=1
 
@@ -101,13 +101,13 @@ class StartWorker(Worker):
                 while (ec2_instance_start == 0):
                     logger.debug('Starting EC2 instance: %s' % self.instance.id)
                     try:
-                            result=self.instance.start()
-                            ec2_instance_start = 1
-                            logger.debug('Starting EC2 instance: %s' % self.instance.id)
-                            logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
+                        result=self.instance.start()
+                        ec2_instance_start = 1
+                        logger.debug('Starting EC2 instance: %s' % self.instance.id)
+                        logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
                     except Exception as e:
                         msg = 'Worker::instance.start() Exception encountered during instance start ---> %s' % e
-                        subject_prefix = "Scheduler exception - EC2 instance start"
+                        subject_prefix = "Exception - EC2 instance start"
                         logger.error(msg)
                         self.snsInit.exponentialBackoff(ec2_start_api_retry_count,msg,subject_prefix)
                         ec2_start_api_retry_count += 1
@@ -147,7 +147,7 @@ class StartWorker(Worker):
                         instance_type_done=1
                     except Exception as e:
 			msg = 'Worker::instance.modify_attribute().modifiedInstanceType Exponential Backoff in progress for EC2 instance %s, retry count %s, error --> %s ' % (self.instance,scale_api_retry_count,str(e))
-			subject_prefix = "Scheduler exception ec2.modify_attribute"
+			subject_prefix = "Exception ec2.modify_attribute"
 			logger.warning(msg)
 			self.snsInit.exponentialBackoff(scale_api_retry_count,msg,subject_prefix)
 			scale_api_retry_count += 1
@@ -165,7 +165,7 @@ class StartWorker(Worker):
                     except Exception as e:
 			msg = 'Worker::instance.modify_attribute().ebsOptimizedAttr Exponential Backoff in progress for EC2 instance %s, retry count = %s, error --> %s' % (self.instance,ebs_optimized_retry_count,str(e))
 		        logger.warning(msg)	
-			subject_prefix = "Scheduler exception EC2 modify_attribute"
+			subject_prefix = "Exception EC2 modify_attribute"
 			self.snsInit.exponentialBackoff(ebs_optimized_retry_count,msg,subject_prefix)
 			ebs_optimized_retry_count += 1
 
@@ -214,7 +214,7 @@ class StopWorker(Worker):
                 except Exception as e:
 			msg = 'Worker::instance.stop() Exponential Backoff in progress for EC2 instance %s, retry count = %s, error --> %s' % (self.instance,stop_instance_api_retry_count,str(e))
                         logger.warning(msg)
-			subject_prefix = "Scheduler exception - instance.stop"
+			subject_prefix = "Exception instance.stop"
 			self.snsInit.exponentialBackoff(stop_instance_api_retry_count,msg,subject_prefix)
 		        stop_instance_api_retry_count += 1
 
