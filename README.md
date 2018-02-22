@@ -46,7 +46,7 @@ Guides:
 1. [Users Guide](#users-guide)
 1. [Quick Start Guide](#quick-start-guide)
 1. [Architecture Guide](#architecture-guide)
-1. [Reference Guide](#quick-start-guide)
+1. [Reference Guide](#reference-guide)
 
 ---
 ## Benefits Guide
