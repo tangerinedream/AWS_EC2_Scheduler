@@ -17,12 +17,13 @@ class Worker(object):
     SNS_SUBJECT_PREFIX_WARNING="Warning:"
     SNS_SUBJECT_PREFIX_INFORMATIONAL="Info:"
 
-    def __init__(self, workloadRegion, instance, snsInit,dryRunFlag):
+    def __init__(self, workloadRegion, instance, snsInit,ec2_client,dryRunFlag):
 
         self.workloadRegion=workloadRegion
         self.instance=instance
         self.dryRunFlag=dryRunFlag
         self.snsInit = snsInit
+        self.ec2_client = ec2_client
         self.instanceStateMap = {
             "pending" : 0,
             "running" : 16,
@@ -37,12 +38,11 @@ class Worker(object):
         except Exception as e:
             msg = 'Worker::__init__() Exception obtaining botot3 ec2 resource in region %s -->' % workloadRegion
             logger.error(msg + str(e))
-
-
+	
 class StartWorker(Worker):
 
-    def __init__(self, ddbRegion, workloadRegion, instance, all_elbs, elb, scalingInstanceDelay, dryRunFlag, max_api_request, snsInit):
-        super(StartWorker, self).__init__(workloadRegion, instance,snsInit,dryRunFlag)
+    def __init__(self, ddbRegion, workloadRegion, instance, all_elbs, elb, scalingInstanceDelay, dryRunFlag, max_api_request, snsInit,ec2_client):
+        super(StartWorker, self).__init__(workloadRegion, instance,snsInit,ec2_client,dryRunFlag)
 
         self.ddbRegion=ddbRegion
         self.all_elbs=all_elbs
@@ -125,28 +125,34 @@ class StartWorker(Worker):
             else:
                 logger.info('Instance [%s] will be scaled to Instance Type [%s]' % (self.instance.id , modifiedInstanceType) )
 
-                targetInstanceFamily = modifiedInstanceType.split('.')[0]  # Grab the first token after split()
+		# Extract whole instance type from DDB into a list
+                modifiedInstanceTypeList = modifiedInstanceType.split('.')		
+                targetInstanceFamily = modifiedInstanceTypeList[0]
 
                 # EC2.Instance.modify_attribute()
                 # Check and exclude non-optimized instance families. Should be enhanced to be a map.  Currently added as hotfix.
                 preventEbsOptimizedList = [ 't2' ]
                 if (targetInstanceFamily in preventEbsOptimizedList ):
                     ebsOptimizedAttr = False
+		# Check T2 Unlimited	
+                    self.t2Unlimited(modifiedInstanceTypeList)
                 else:
                     ebsOptimizedAttr = self.instance.ebs_optimized    # May have been set to True or False previously
 
                 instance_type_done=0
                 scale_api_retry_count=1
+		
+		modifiedInstanceTypeValue = modifiedInstanceTypeList[0] + '.' + modifiedInstanceTypeList[1]
                 while(instance_type_done == 0):
                     try:
                         result = self.instance.modify_attribute(
                             InstanceType={
-                                'Value': modifiedInstanceType
+                                'Value': modifiedInstanceTypeValue
                             }
                         )
                         instance_type_done=1
                     except Exception as e:
-			msg = 'Worker::instance.modify_attribute().modifiedInstanceType Exponential Backoff in progress for EC2 instance %s, retry count %s, error --> %s ' % (self.instance,scale_api_retry_count,str(e))
+			msg = 'Worker::instance.modify_attribute().modifiedInstanceTypeValue Exponential Backoff in progress for EC2 instance %s, retry count %s, error --> %s ' % (self.instance,scale_api_retry_count,str(e))
 			subject_prefix = "Exception ec2.modify_attribute"
 			logger.warning(msg)
 			self.snsInit.exponentialBackoff(scale_api_retry_count,msg,subject_prefix)
@@ -179,12 +185,72 @@ class StartWorker(Worker):
             logMsg = 'scaleInstance() requested to change instance type for non-stopped instance ' + self.instance.id + ' no action taken'
             logger.warning(logMsg)
 
+    def t2Unlimited(self,modifiedInstanceList):
+	
+	current_t2_value = self.ec2_client.describe_instance_credit_specifications(
+		InstanceIds=[
+	        self.instance.id,
+        	     ]
+	        )['InstanceCreditSpecifications'][0]['CpuCredits']
+	if len(modifiedInstanceList) == 3:
+		self.modifiedInstanceFlag = modifiedInstanceList[2]
+		logger.info('t2Unlimited(): Checking if T2 Unlimited flag is specified in DynamoDB')
+		logger.debug('t2Unlimited(): t2_unlimited_flag: %s' % self.modifiedInstanceFlag )
+		if ( self.modifiedInstanceFlag == "u") or ( self.modifiedInstanceFlag == "U"):
+		    logger.debug('t2Unlimited(): Found T2 Flag in DynamoDB: %s' % self.modifiedInstanceFlag )
+		    if current_t2_value == "standard":
+			t2_unlimited_done=0
+			t2_unlimited_retry_count=1
+			while(t2_unlimited_done == 0):
+			    try:
+				logger.info('t2Unlimited(): Trying to modify EC2 instance credit specification')
+			        result = self.ec2_client.modify_instance_credit_specification(
+				InstanceCreditSpecifications=[
+					{
+						'InstanceId': self.instance.id,
+						'CpuCredits': 'unlimited'
+					}
+					]
+				    )
+				logger.info('t2Unlimited(): EC2 instance credit specification modified')
+				t2_unlimited_done=1
+			    except Exception as e:
+				msg = 'Worker::instance.modify_attribute().t2Unlimited Exponential Backoff in progress for EC2 instance %s, retry count = %s, error --> %s' % (self.instance,t2_unlimited_retry_count,str(e))
+				logger.warning(msg)
+				subject_prefix = "Exception EC2 T2 unlimited"
+				self.snsInit.exponentialBackoff(t2_unlimited_retry_count,msg,subject_prefix)
+				t2_unlimited_retry_count += 1
+	else:
+		if current_t2_value == "unlimited":
+	        	logger.debug('t2Unlimited(): Current T2 value: %s' % current_t2_value)
+			t2_standard_done=0
+	      		t2_standard_retry_count=1
+			while(t2_standard_done == 0):
+			    try:
+				logger.info('t2Unlimited(): Trying to modify EC2 instance credit specification')
+		        	result = self.ec2_client.modify_instance_credit_specification(
+				InstanceCreditSpecifications=[
+				    {
+					'InstanceId': self.instance.id,
+					'CpuCredits': 'standard'
+				    }
+					]
+				    )
+				logger.info('t2Unlimited(): EC2 instance credit specification modified')
+				t2_standard_done = 1
+			    except Exception as e:
+				msg = 'Worker::instance.modify_attribute().t2standard Exponential Backoff in progress for EC2 instance %s, retry count = %s, error --> %s' % (self.instance,t2_standard_retry_count,str(e))
+				logger.warning(msg)
+				subject_prefix = "Exception EC2 T2 unlimited"
+				self.snsInit.exponentialBackoff(t2_standard_retry_count,msg,subject_prefix)
+				t2_standard_retry_count += 1
+
     def start(self):
         self.startInstance()
 
 class StopWorker(Worker):
-    def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag,max_api_request,snsInit):
-        super(StopWorker, self).__init__(workloadRegion, instance, snsInit,dryRunFlag)
+    def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag,max_api_request,snsInit,ec2_client):
+        super(StopWorker, self).__init__(workloadRegion, instance, snsInit, ec2_client,dryRunFlag)
 
         self.ddbRegion=ddbRegion
 

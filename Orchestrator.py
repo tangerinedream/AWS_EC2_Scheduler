@@ -212,6 +212,12 @@ class Orchestrator(object):
 			msg = 'Orchestrator::__init__() Exception obtaining botot3 elb client in region %s -->' % self.workloadRegion
 			logger.error(msg + str(e))
 
+		try:
+			self.ec2_client = boto3.client('ec2',region_name=self.workloadRegion)
+	 	except Exception as e:
+			msg = 'Orchestrator::__init__() Exception obtaining boto3 ec2 client in region %s -->' % self.workloadRegion
+			logger.error(msg + str(e))
+
 		# Grab tier specific workload information from DynamoDB
                 self.lookupTierSpecs(self.partitionTargetValue)
 
@@ -596,7 +602,7 @@ class Orchestrator(object):
 
 
 		for currInstance in instancesToStopList:
-			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.max_api_request,self.snsInit)
+			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.max_api_request,self.snsInit,self.ec2_client)
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
 				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME],
@@ -639,7 +645,7 @@ class Orchestrator(object):
 
 		for currInstance in instancesToStartList:
 			logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.dryRunFlag, self.max_api_request,self.snsInit)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.dryRunFlag, self.max_api_request,self.snsInit,self.ec2_client)
 
 			# If a ScalingProfile was specified, change the instance type now, prior to Start
 			instanceTypeToLaunch = self.isScalingAction(tierName)
