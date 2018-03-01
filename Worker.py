@@ -175,10 +175,10 @@ class StartWorker(Worker):
 			self.snsInit.exponentialBackoff(ebs_optimized_retry_count,msg,subject_prefix)
 			ebs_optimized_retry_count += 1
 
-                    # It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
-                    #    this can cause an issue on instance type change, whereby the LaunchPlan generates an exception.
-                    #    To mitigate against this, we will introduce a one second sleep delay after modifying an attribute
-                    time.sleep(self.scalingInstanceDelay)
+                # It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
+                #    this can cause an issue on instance type change, whereby the LaunchPlan generates an exception.
+                #    To mitigate against this, we will introduce a one second sleep delay after modifying an attribute
+                time.sleep(self.scalingInstanceDelay)
 
                 logger.info('scaleInstance() for ' + self.instance.id + ' result is %s' % result)
         else:
