@@ -118,7 +118,7 @@ def initLogging(loglevel,partitionTargetValue):
                 loggingLevelSelected=logging.NOTSET
 
         filenameVal='Orchestrator_' + partitionTargetValue + '.log' 
-        log_formatter = logging.Formatter('[%(asctime)s][%(levelname)s][%(module)s:%(funcName)s()][%(lineno)d]%(message)s')
+	log_formatter = logging.Formatter('[%(asctime)s][P:%(process)d][%(levelname)s][%(module)s:%(funcName)s()][%(lineno)d]%(message)s')
 
         # Add the rotating file handler
         handler = logging.handlers.RotatingFileHandler(
