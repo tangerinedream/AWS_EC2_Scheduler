@@ -65,7 +65,7 @@ Resources:
         - AttributeName: SpecName
           KeyType: HASH
       ProvisionedThroughput:
-        ReadCapacityUnits: 2
+        ReadCapacityUnits: 1
         WriteCapacityUnits: 1
       Tags:
         - "Key" : "AWS_EC2_Scheduler"
