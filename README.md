@@ -23,9 +23,14 @@ You have a need to manage multiple Workloads across various AWS Regions.  This i
 #### Orderly Workload Lifecycle Execution
 Stopping and Starting instances in an orderly manner may involve starting and stopping Tiers in a particular order, after all, you may not want to start your Web tier without having started your App Server tier or DB tier for that matter, so sequencing may be important for non-trivial workloads.  When starting a Tier, you may want to wait for one Tier to complete some initialization prior to sequencing to the next Tier in the dependency chain.  So, inter-tier orchestration may be important to you.
 
-#### Scaling
-In some cases, you may need to scale your non-trivial workload up or down for various reasons, for example time of day, or seasonal demand.  The AWS_EC2_Scheduler supports the ability to vertically scale up or down on a tier by tier basis, with each tier having it's own scaling profile.  This allows each tier to be scaled independently, and with independent instance types/sizes.  Tiers may have an unlimited number of profiles, so for example you could have a profile for development, performance testing, econonmy modes.  When horizontal scaling isn't an option, the AWS_EC2_Scheduler can vertically scale your workload, optimizing your compute and spend.
+#### Vertical Scaling
+In some cases, you may need to scale parts or all your non-trivial workload vertically up or down for various reasons, for example time of day, or seasonal demand.  The AWS_EC2_Scheduler supports the ability to vertically scale up or down on a tier by tier basis, with each tier having it's own scaling profile.  This allows each tier to be scaled independently, and with independent instance types/sizes.  Tiers may have an unlimited number of profiles, so for example you could have a profile for development, performance testing, econonmy, and production modes.  When horizontal scaling isn't an option, the AWS_EC2_Scheduler can vertically scale your workload, optimizing your compute and spend.
 
+#### Horizontal Scaling
+In many cases you will not need all instances within a tier to be in Running state.  While your production profile may require 3 Web Server instances running across 3 Availability Zones, that requirement may not be required for your development environment(s).  When that is true, there's no reason to by paying for infrastructure in a triple-AZ HA configuration, when multi-AZ or even single suffices.  
+The Scheduler has a feature called "Fleet Subsets" which Starts the desired proper subset of instances within a tier based on your specification.  For example, under "development" profile, start 50% of the total fleet size.  Absolute values are supported as well, so specifying '2' will result in two instances within the Tier being started.  Fleet Subsets are Tier specific, for maximum flexibility.  
+
+The Scheduler currently supports Scaling Out against running workloads.  Should the need arise, you could then scale out a running "development" environment to a "performance" profile without first stopping and restarting the workload.  In our example of running under the "development" profile, we can increase the fleet size from 50% to the percentage specified in the "performance" profile, say 75%, and the Scheduler will fire up the required additional instances to accomplish the 75% goal.  Currently, the ability to Scale In is not supported.
 Todo: Add diagram here
 
 #### Proactive ELB (De)Registration
@@ -68,12 +73,12 @@ With the amount of savings achieved, you can more easily consume additional AWS 
 ### #2 Automatic Instance Hardware Reassignment
 AWS Instance Retirement Notifications are a reality that require attention at times you do not control.  By Stopping instances daily, they will automatically be moved off of hardware slated for retirement or potentially incurring connectivity failures.  
 
-### #3 Vertical Scaling
-While Horizontal Scaling, and Autoscaling are typically preferred versus Vertical Scaling, there are sometimes constraints that don't allow for this to occur, for example:
-1. Third party code which is not horizontally scalable, or
+### #3 Scaling
+While Autoscaling is typically preferred, there are sometimes constraints that don't allow for this to occur, for example:
+1. Third party code which is not autoscale friendly, or
 1. Licensing restrictions
 
-In these and other cases, scaling vertically can assist in certain situations. The AWS_EC2_Scheduler supports the ability to Start an environment under multiple profiles, which allow for specifying different instance types and sizes.  By doing so, you can scale up when you want/need to, and scale back down when appropriate.  A typical use case is performance testing.
+In these and other cases, scaling can assist in certain situations. The AWS_EC2_Scheduler supports the ability to Start an environment under multiple profiles, which allow for specifying different instance types and sizes.  Additionally, the Scheduler support Horizontal Scaling out.  By doing so, you can scale up when you want/need to, and scale back down when appropriate.  A typical use case is performance testing.
 
 ### #4 Workload Resiliency
 Cattle not Pets is best practice, and while idealy through automation an environment can be provisioned and configured from scratch and terminated when testing is complete, there are scenarios where workloads will not be this tolerant.  In those cases, the workload should minimally be tolerant enough to be started and stopped frequently, and demonstrate consistency across those (known) states.  Running workloads for weeks, months, and in some cases years without interruption is a great recipie for producing Pets.
