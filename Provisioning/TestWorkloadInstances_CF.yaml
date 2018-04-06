@@ -43,6 +43,7 @@ Resources:
           Value : "ENV001"
         - Key : "ApplicationRole"
           Value : "Role_Web"
+          
   TestWebInstance2:
     Type: "AWS::EC2::Instance"
     Properties:
@@ -59,7 +60,42 @@ Resources:
           Value : "ENV001"
         - Key : "ApplicationRole"
           Value : "Role_Web"
-  TestAppInstance:
+          
+  TestWebInstance3:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.nano"
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", 64]
+      SecurityGroupIds:
+        - Ref: SecurityGroupParam
+      SubnetId:
+        Ref: SubnetParam
+      Tags:
+        - Key : "Name"
+          Value : "WebServerTwo"
+        - Key : "Workload"
+          Value : "ENV001"
+        - Key : "ApplicationRole"
+          Value : "Role_Web"
+          
+  TestAppInstance1:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      InstanceType: "t2.nano"
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", 64]
+      SecurityGroupIds:
+        - Ref: SecurityGroupParam
+      SubnetId:
+        Ref: SubnetParam
+      Tags:
+        - Key : "Name"
+          Value : "AppServer"
+        - Key : "Workload"
+          Value : "ENV001"
+        - Key : "ApplicationRole"
+          Value : "Role_App"  
+
+  TestAppInstance2:
     Type: "AWS::EC2::Instance"
     Properties:
       InstanceType: "t2.nano"
@@ -75,6 +111,7 @@ Resources:
           Value : "ENV001"
         - Key : "ApplicationRole"
           Value : "Role_App"
+          
   TestDBInstance:
     Type: "AWS::EC2::Instance"
     Properties:
