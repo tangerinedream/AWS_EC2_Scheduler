@@ -150,7 +150,7 @@ class Loader(object):
   # ----------------------------------------------------------------------------
   def loadWorkload(self):
 
-    logger.info("Adding a workload: %s to Dynamo table: %s" % (self.workloadSpecName, self.workloadTableName) )
+    logger.info("Adding workload: %s to Dynamo table: %s" % (self.workloadSpecName, self.workloadTableName) )
     workLoadTable = self.dynDb.Table(self.workloadTableName)
 
     workLoadTable.put_item(Item=self.workloadBlock)
