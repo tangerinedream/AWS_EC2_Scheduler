@@ -8,7 +8,7 @@ Parameters:
     Type: String
     Description: >
       Enter a bucket name for SSM to use for temporary file use.
-      Note: The bucket region must be in the same region as where the Scheduler runs,
+      Note: The bucket region must be in the same region as where the workloads runs,
       as SSM does not support Cross-Region buckets
 
 Resources:
@@ -30,12 +30,12 @@ Resources:
             Status: Enabled
             TagFilters:
               -
-                "Key" : "AWS_EC2_Scheduler"
-                "Value" : "Lifecycle Rule for Bucket of SSM Temp Files"
+                Key : "AWS_EC2_Scheduler"
+                Value : "Lifecycle Rule for Bucket of SSM Temp Files"
       Tags:
         -
-          "Key" : "AWS_EC2_Scheduler"
-          "Value" : "Bucket for SSM Temp Files"
+          Key : "AWS_EC2_Scheduler"
+          Value : "Bucket for SSM Temp Files"
 
   SchedulerDynamoDBWorkloadTable:
     Type: "AWS::DynamoDB::Table"
@@ -51,8 +51,8 @@ Resources:
         ReadCapacityUnits: 1
         WriteCapacityUnits: 1
       Tags:
-        - "Key" : "AWS_EC2_Scheduler"
-          "Value" : "Workload Definition"
+        - Key : "AWS_EC2_Scheduler"
+          Value : "Workload Definition"
 
   SchedulerDynamoDBTierTable:
     Type: "AWS::DynamoDB::Table"
@@ -68,8 +68,8 @@ Resources:
         ReadCapacityUnits: 1
         WriteCapacityUnits: 1
       Tags:
-        - "Key" : "AWS_EC2_Scheduler"
-          "Value" : "Tier Definition"
+        - Key : "AWS_EC2_Scheduler"
+          Value : "Tier Definition"
 
   SchedulerSNSTopic:
     Type: "AWS::SNS::Topic"
@@ -89,12 +89,12 @@ Resources:
             Status: Enabled
             TagFilters:
               -
-                "Key" : "AWS_EC2_Scheduler"
-                "Value" : "Lifecycle Rule for Bucket of SSM Temp Files"
+                Key : "AWS_EC2_Scheduler"
+                Value : "Lifecycle Rule for Bucket of SSM Temp Files"
       Tags:
         -
-          "Key" : "AWS_EC2_Scheduler"
-          "Value" : "Bucket for SSM Temp Files"
+          Key : "AWS_EC2_Scheduler"
+          Value : "Bucket for SSM Temp Files"
 
   SchedulerDynamoDBWorkloadTable:
     Type: "AWS::DynamoDB::Table"
@@ -110,8 +110,8 @@ Resources:
         ReadCapacityUnits: 1
         WriteCapacityUnits: 1
       Tags:
-        - "Key" : "AWS_EC2_Scheduler"
-          "Value" : "Workload Definition"
+        - Key : "AWS_EC2_Scheduler"
+          Value : "Workload Definition"
 
   SchedulerDynamoDBTierTable:
     Type: "AWS::DynamoDB::Table"
@@ -120,15 +120,19 @@ Resources:
       AttributeDefinitions:
         - AttributeName: SpecName
           AttributeType: S
+        - AttributeName: TierTagValue
+          AttributeType: S
       KeySchema:
         - AttributeName: SpecName
           KeyType: HASH
+        - AttributeName: TierTagValue
+          KeyType: RANGE
       ProvisionedThroughput:
-        ReadCapacityUnits: 2
+        ReadCapacityUnits: 1
         WriteCapacityUnits: 1
       Tags:
-        - "Key" : "AWS_EC2_Scheduler"
-          "Value" : "Tier Definition"
+        - Key : "AWS_EC2_Scheduler"
+          Value : "Tier Definition"
 
   SchedulerIAMPolicy:
     Type: "AWS::IAM::ManagedPolicy"

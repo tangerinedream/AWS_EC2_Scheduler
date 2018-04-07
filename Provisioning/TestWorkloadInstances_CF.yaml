@@ -21,11 +21,13 @@ Mappings:
     #   2. Modify over time as the AMIs will expire
     # These are all 64 bit Ubuntu v16+, change as you see fit
     us-east-1:
-      "64": "ami-aa2ea6d0"
+      "64": ami-aa2ea6d0
     us-west-2:
-      "64": "ami-0def3275"
+      "64": ami-0def3275
     eu-west-1:
-      "64": "ami-8fd760f6"
+      "64": ami-8fd760f6
+    us-east-2:
+      "64": ami-916f59f4
 Resources:
   TestWebInstance1:
     Type: "AWS::EC2::Instance"

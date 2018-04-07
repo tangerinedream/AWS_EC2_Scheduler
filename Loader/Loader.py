@@ -2,6 +2,7 @@ import argparse
 import os.path
 import logging
 import yaml
+import boto3
 from boto3.dynamodb.conditions import Key, Attr
 
 logger = logging.getLogger('Loader') #The Module Name
@@ -29,7 +30,7 @@ class Loader(object):
   #=======================================================================================================================================
   # Yaml Processing
   #---------------------------------------------------------------------------------------------------------------------------------------
-  def isValidYamlFilename(fileName):
+  def isValidYamlFilename(self, fileName):
     logger.info("Yaml File name: " + fileName)
     if os.path.exists(fileName) == False:
       logger.error("Yaml File %s doesn't exist, exiting." % fileName)
@@ -43,12 +44,12 @@ class Loader(object):
       logger.error("File type %s not supported" % fileExt )
       return(False)
 
-  def loadYamlConfig(yamlFile):
+  def loadYamlConfig(self, yamlFile):
     if( self.isValidYamlFilename(yamlFile) == False ):
       logger.error("File must exist and be named with .yaml  Exiting")
-      quit()
+      quit(-1)
 
-    stream = file(fileName, 'r')
+    stream = file(yamlFile, 'r')
     yaml_doc = yaml.load(stream)
 
 
@@ -61,9 +62,9 @@ class Loader(object):
     self.tiersTableName = topLevelTiersBlock.get("table")
     self.tiers= topLevelTiersBlock.get("tiers") # this 'tiers' is a child in the tree of the top level 'tiers'
 
-  def isRequiredAttributes():
+  def isRequiredAttributes(self):
 
-    if( Loader.WORKLOAD_TAG_NAME and Loader.WORKLOAD_TAG_VALUE and Loader.WORKLOAD_TIER_TAG_NAME in self.workloads):
+    if( Loader.WORKLOAD_TAG_NAME and Loader.WORKLOAD_TAG_VALUE and Loader.WORKLOAD_TIER_TAG_NAME in self.workloadBlock):
 
       for currTier in self.tiers:
           if Loader.SPEC_NAME and Loader.TIER_TAG_VALUE and Loader.TIER_START and Loader.TIER_STOP in currTier:
@@ -88,45 +89,46 @@ class Loader(object):
 
     return(True)
 
-  def isRequiredSequencing():
+  def isRequiredSequencing(self):
       
     # Construct the list
     startTierIndexList = []
     stopTierIndexList = []
     for aTier in self.tiers:
-       startTierIndexList = aTier["TierStart"]["TierSequence"]
-       stopTierIndexList = aTier["TierStop"]["TierSequence"]
+       startTierIndexList.append( aTier["TierStart"]["TierSequence"] )
+       stopTierIndexList.append( aTier["TierStop"]["TierSequence"]  )
     
     # Sort the list for the diff
-    sorted( startTierIndexList, key=int )
-    sorted( stopTierIndexList, key=int )
+    startTierIndexList= sorted( startTierIndexList )
+    stopTierIndexList = sorted( stopTierIndexList )
     
-    logger.debug('startTierIndexList is %s', % startTierIndexList)
+    logger.debug('startTierIndexList is %s' % startTierIndexList)
     logger.debug('stopTierIndexList  is %s' %  stopTierIndexList)
     
     # If there are any differences, there's a problem
     symmetricDifferenceOfTierIndexLists=set(startTierIndexList) ^ set(stopTierIndexList)
     isDifferent = bool(symmetricDifferenceOfTierIndexLists)
     if( isDifferent ):
-      logger.warning('Start and Stop tiers contain different indexes. Here are the differences %s, Start %s, Stop %s' % (startTierIndexList, stopTierIndexList, symmetricDifferenceOfTierIndexLists))
-    
+      logger.error('Error: Start and Stop tiers contain different indexes. Here are the differences: mismatched TierSequences %s, Start TierSequences %s, Stop TierSequences %s' % (symmetricDifferenceOfTierIndexLists, startTierIndexList, stopTierIndexList ))
+      return (False)
+
     # Now, check for non-sequentialness. Interesting fact, since we now know the lists contain the same values, we only need to inspect one of them.
     maxIdx = max(startTierIndexList)
     minIdx = min(startTierIndexList)
           
     # First, did we start at zero?
     if( minIdx != 0 ):
-      logger.error('Error, Tiers must start at Zero')
+      logger.error('Error: TierSequences must start at Zero')
       return(False)
     
     # Next, did we end at len(startTierIndexList) ?
     if( maxIdx != len(startTierIndexList)-1 ):
-      logger.info ('Error, Tier Start and Stop index valued must be sequential without gaps, nor duplicates. Index List is %s' % startTierIndexList)
+      logger.error('Error: Tier Start and Tier Stop TierSequences must be sequential starting at zero and without gaps, nor duplicates. Index List is %s' % startTierIndexList)
       return(False)
 
     return(True)
     
-  def isValidSpecification():
+  def isValidSpecification(self):
 
     if( self.isRequiredAttributes() ):
       if( self.isRequiredSequencing() ):
@@ -140,15 +142,15 @@ class Loader(object):
   #---------------------------------------------------------------------------------------------------------------------------------------
   def deleteWorkloads(self):
 
-    logger.info("Deleting workload %s from Dynamo table: %s" % (self.workloadSpecName, self.workloadTableName)
+    logger.info("Deleting workload: %s from Dynamo table: %s" % (self.workloadSpecName, self.workloadTableName) )
     workLoadTable = self.dynDb.Table(self.workloadTableName)
 
-    workLoadTable.delete_item(Key={ Loader.WORKLOAD_PRIMARY_KEY : self.workloadSpecName} )
+    workLoadTable.delete_item(Key={ Loader.WORKLOAD_PARTITION_KEY : self.workloadSpecName} )
 
   # ----------------------------------------------------------------------------
   def loadWorkload(self):
 
-    logger.info("Adding a workload %s to Dynamo table: %s" % (self.getWorkloadSpecName, self.workloadTableName)
+    logger.info("Adding a workload: %s to Dynamo table: %s" % (self.workloadSpecName, self.workloadTableName) )
     workLoadTable = self.dynDb.Table(self.workloadTableName)
 
     workLoadTable.put_item(Item=self.workloadBlock)
@@ -166,8 +168,9 @@ class Loader(object):
 
     # Tier Table dynamo calls require both keys, Partition and Sort
     for aTier in theTiers:
-      primaryKey = {key: value for key, value in aTier.iteritems() if (key==Loader.TIER_PARTITION_KEY and value==Loader.TIER_SORT_KEY)}
-      logger.info("Deleting Tier {%s, %s}" % primaryKey.get(key), primaryKey.get(value))
+      primaryKey={Loader.TIER_PARTITION_KEY : aTier[Loader.TIER_PARTITION_KEY], Loader.TIER_SORT_KEY : aTier[Loader.TIER_SORT_KEY] }
+      #primaryKey = {key: value for key, value in aTier.iteritems() if (key==Loader.TIER_PARTITION_KEY and value==Loader.TIER_SORT_KEY)}
+      logger.info("Deleting Tier {%s, %s}" % (primaryKey[Loader.TIER_PARTITION_KEY], primaryKey[Loader.TIER_SORT_KEY]) )
       tiersTable.delete_item(Key=primaryKey)
 
   # ----------------------------------------------------------------------------
@@ -178,18 +181,18 @@ class Loader(object):
     theTiers = self.tiers
 
     for aTier in theTiers:
-      logger.info("Loading Tier {%s, %s}" % aTier.get(Loader.TIER_PARTITION_KEY), aTier.get(Loader.TIER_SORT_KEY))
+      logger.info("Loading Tier {%s, %s}" % (aTier.get(Loader.TIER_PARTITION_KEY), aTier.get(Loader.TIER_SORT_KEY)) )
       tiersTable.put_item(Item=aTier)
 
   # ----------------------------------------------------------------------------
-  def loadSpecification():
-    deleteWorkloads()
-    deleteTiers()
+  def loadSpecification(self):
+    self.deleteWorkloads()
+    self.deleteTiers()
 
-    loadWorkload()
-    loadTiers()
+    self.loadWorkload()
+    self.loadTiers()
 
-  def initLogging(loglevel):
+  def initLogging(self, loglevel):
      # Set logging level
      loggingLevelSelected = logging.INFO
 
@@ -210,36 +213,36 @@ class Loader(object):
      sh = logging.StreamHandler()
      logFormatter = logging.Formatter('[%(asctime)s][P:%(process)d][%(levelname)s][%(module)s:%(funcName)s()][%(lineno)d]%(message)s')
      sh.setFormatter(logFormatter)
-     self.logger.addHandler(sh)
-     self.logger.setLevel(loggingLevelSelected)
+     logger.addHandler(sh)
+     logger.setLevel(loggingLevelSelected)
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Command line parser')
 
-    parser.add_argument('-f', '--fileName', help='StartStop specs file name', required=True)
+    parser.add_argument('-f', '--fileName',       help='StartStop specs file name', required=True)
     parser.add_argument('-r', '--dynamoDBRegion', help='Region where the DynamoDB configuration exists.', required=True)
-    parser.add_argument('-v', '--verifyYamlOnly', help='Only verify the Yaml file, do not execute any changes', required=False)
-    parser.add_argument('-l','--loglevel', choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to log', required=False)
+    parser.add_argument('-v', '--validateOnly', help='Only verify the Yaml file, do not execute any changes', action="store_true", required=False)
+    parser.add_argument('-l', '--logLevel', choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to log', required=False)
 
     args = parser.parse_args()
 
-    if( args.loglevel > 0 ):
-      loglevel = args.loglevel
+    if( args.logLevel > 0 ):
+      logLevel = args.logLevel
     else:
-      loglevel = 'info'
+      logLevel = 'info'
 
     loader = Loader(args.dynamoDBRegion.strip(), logLevel)
 
     loader.loadYamlConfig(args.fileName.strip())
 
     if( loader.isValidSpecification() ):
-      if( args.verifyYamlOnly ):
-        logger.info('--verifyYamlOnly flag passed, no changes will execute')
+      if( args.validateOnly ):
+        logger.info('--validateOnly flag passed, no changes will execute')
       else:
         loader.loadSpecification()
     else:
         logger.error('Yaml config file did not pass validation, exiting')
         quit(-1)
 
-    loader.logger.info("***Done***")
+    logger.info("***Done***")
