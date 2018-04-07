@@ -167,18 +167,19 @@ class Loader(object):
     theTiers = response['Items']
 
     # Tier Table dynamo calls require both keys, Partition and Sort
+    logger.info("Deleting Tiers from table: %s" %  (self.tiersTableName))
     for aTier in theTiers:
       primaryKey={Loader.TIER_PARTITION_KEY : aTier[Loader.TIER_PARTITION_KEY], Loader.TIER_SORT_KEY : aTier[Loader.TIER_SORT_KEY] }
-      logger.info("Deleting Tier {%s, %s}" % (primaryKey[Loader.TIER_PARTITION_KEY], primaryKey[Loader.TIER_SORT_KEY]) )
+      logger.info("Deleting Tier {%s, %s}" % (primaryKey[Loader.TIER_PARTITION_KEY], primaryKey[Loader.TIER_SORT_KEY]))
       tiersTable.delete_item(Key=primaryKey)
 
   # ----------------------------------------------------------------------------
   def loadTiers(self):
 
-    logger.info("Loading Tiers Items ...")
     tiersTable = self.dynDb.Table(self.tiersTableName)
     theTiers = self.tiers
-
+    
+    logger.info("Loading Tiers into table: %s" %  (self.tiersTableName))
     for aTier in theTiers:
       logger.info("Loading Tier {%s, %s}" % (aTier.get(Loader.TIER_PARTITION_KEY), aTier.get(Loader.TIER_SORT_KEY)) )
       tiersTable.put_item(Item=aTier)
