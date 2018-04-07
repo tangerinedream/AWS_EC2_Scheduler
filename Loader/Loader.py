@@ -169,7 +169,6 @@ class Loader(object):
     # Tier Table dynamo calls require both keys, Partition and Sort
     for aTier in theTiers:
       primaryKey={Loader.TIER_PARTITION_KEY : aTier[Loader.TIER_PARTITION_KEY], Loader.TIER_SORT_KEY : aTier[Loader.TIER_SORT_KEY] }
-      #primaryKey = {key: value for key, value in aTier.iteritems() if (key==Loader.TIER_PARTITION_KEY and value==Loader.TIER_SORT_KEY)}
       logger.info("Deleting Tier {%s, %s}" % (primaryKey[Loader.TIER_PARTITION_KEY], primaryKey[Loader.TIER_SORT_KEY]) )
       tiersTable.delete_item(Key=primaryKey)
 
