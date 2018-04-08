@@ -15,10 +15,12 @@ class Loader(object):
   WORKLOAD_TIER_TAG_NAME='TierFilterTagName'
   TIER_PARTITION_KEY = 'SpecName'
   TIER_SORT_KEY = 'TierTagValue'
+  TIER_SCALING = 'TierScaling'
   SPEC_NAME= 'SpecName'
   TIER_TAG_VALUE = 'TierTagValue'
   TIER_START = 'TierStart'
   TIER_STOP = 'TierStop'
+  FLEET_SUBSET = 'FleetSubset'
 
   # ----------------------------------------------------------------------------
   def __init__(self, dynamoDBRegion, logLevel):
@@ -62,13 +64,38 @@ class Loader(object):
     self.tiersTableName = topLevelTiersBlock.get("table")
     self.tiers= topLevelTiersBlock.get("tiers") # this 'tiers' is a child in the tree of the top level 'tiers'
 
+  def isFleetSubsetStrings(self, tierBlock):
+    tierScalingClause =  tierBlock[Loader.TIER_SCALING]
+    for currProfileName, currProfileAttrs in tierScalingClause.iteritems():
+      if(Loader.FLEET_SUBSET in currProfileAttrs) :
+        if(isinstance(currProfileAttrs[Loader.FLEET_SUBSET], basestring)):
+          continue
+        else:
+          logger.error(
+              'In Tier %s, the Profile name %s contains a FleetSubset entry which is not a String ->%s<-.  Please quote the value(s) in the yaml file for this attribute' % (
+              str(tierBlock[Loader.TIER_TAG_VALUE]),
+              str(currProfileName),
+              currProfileAttrs[Loader.FLEET_SUBSET]
+            )
+          )
+          return(False)
+      else:
+        continue
+        
+    return(True)
+
+
+
   def isRequiredAttributes(self):
 
     if( Loader.WORKLOAD_TAG_NAME and Loader.WORKLOAD_TAG_VALUE and Loader.WORKLOAD_TIER_TAG_NAME in self.workloadBlock):
 
       for currTier in self.tiers:
           if Loader.SPEC_NAME and Loader.TIER_TAG_VALUE and Loader.TIER_START and Loader.TIER_STOP in currTier:
-              continue
+              if(self.isFleetSubsetStrings(currTier)):
+                continue
+              else:
+                return(False)
           else:
               logger.error('Tier name %s is missing one of the required attributes: %s, %s, %s, or %s ' % (
                  str(currTier),
@@ -78,6 +105,7 @@ class Loader(object):
                  Loader.TIER_STOP,
               ))
               return(False)
+
     else:
       logger.error('Workload %s is missing one of the required attributes: %s, %s, or %s ' % (
         str(currTier),
