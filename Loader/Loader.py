@@ -141,9 +141,12 @@ class Loader(object):
       logger.error('Error: Start and Stop tiers contain different indexes. Here are the differences: mismatched TierSequences %s, Start TierSequences %s, Stop TierSequences %s' % (symmetricDifferenceOfTierIndexLists, startTierIndexList, stopTierIndexList ))
       return (False)
 
-    # Now, check for non-sequentialness. Interesting fact, since we now know the lists contain the same values, we only need to inspect one of them.
-    maxIdx = max(startTierIndexList)
-    minIdx = min(startTierIndexList)
+    # Now, check for non-sequentialness. 
+    #   Interesting fact, since we now know the lists contain the same values, we only need to inspect one of them.
+    #   Another interesting fact, using set to ensure uniqueness
+    startSet = set(startTierIndexList)
+    maxIdx = max(startSet)
+    minIdx = min(startSet)
           
     # First, did we start at zero?
     if( minIdx != 0 ):
@@ -151,7 +154,7 @@ class Loader(object):
       return(False)
     
     # Next, did we end at len(startTierIndexList) ?
-    if( maxIdx != len(startTierIndexList)-1 ):
+    if( maxIdx != len(startSet)-1 ):
       logger.error('Error: Tier Start and Tier Stop TierSequences must be sequential starting at zero and without gaps, nor duplicates. Index List is %s' % startTierIndexList)
       return(False)
 
