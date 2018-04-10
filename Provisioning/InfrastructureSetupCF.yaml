@@ -37,39 +37,6 @@ Resources:
           Key : "AWS_EC2_Scheduler"
           Value : "Bucket for SSM Temp Files"
 
-  SchedulerDynamoDBWorkloadTable:
-    Type: "AWS::DynamoDB::Table"
-    Properties:
-      TableName: WorkloadSpecification
-      AttributeDefinitions:
-        - AttributeName: SpecName
-          AttributeType: S
-      KeySchema:
-        - AttributeName: SpecName
-          KeyType: HASH
-      ProvisionedThroughput:
-        ReadCapacityUnits: 1
-        WriteCapacityUnits: 1
-      Tags:
-        - Key : "AWS_EC2_Scheduler"
-          Value : "Workload Definition"
-
-  SchedulerDynamoDBTierTable:
-    Type: "AWS::DynamoDB::Table"
-    Properties:
-      TableName: TierSpecification
-      AttributeDefinitions:
-        - AttributeName: SpecName
-          AttributeType: S
-      KeySchema:
-        - AttributeName: SpecName
-          KeyType: HASH
-      ProvisionedThroughput:
-        ReadCapacityUnits: 1
-        WriteCapacityUnits: 1
-      Tags:
-        - Key : "AWS_EC2_Scheduler"
-          Value : "Tier Definition"
 
   SchedulerSNSTopic:
     Type: "AWS::SNS::Topic"
