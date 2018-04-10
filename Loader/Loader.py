@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Command line parser')
 
-    parser.add_argument('-f', '--fileName',       help='StartStop specs file name', required=True)
+    parser.add_argument('-f', '--fileName',       help='YAML Specification file name', required=True)
     parser.add_argument('-r', '--dynamoDBRegion', help='Region where the DynamoDB configuration exists.', required=True)
     parser.add_argument('-v', '--validateOnly', help='Only verify the Yaml file, do not execute any changes', action="store_true", required=False)
     parser.add_argument('-l', '--logLevel', choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to log', required=False)
