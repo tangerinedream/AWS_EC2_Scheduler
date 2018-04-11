@@ -20,7 +20,7 @@ class Loader(object):
   TIER_TAG_VALUE = 'TierTagValue'
   TIER_START = 'TierStart'
   TIER_STOP = 'TierStop'
-  TIER_ORCHESTRATION_DELAY = 'InterTierOrchestrationDelay'
+  #TIER_ORCHESTRATION_DELAY = 'InterTierOrchestrationDelay'
   FLEET_SUBSET = 'FleetSubset'
 
   # ----------------------------------------------------------------------------
@@ -92,7 +92,7 @@ class Loader(object):
     if( Loader.WORKLOAD_TAG_NAME and Loader.WORKLOAD_TAG_VALUE and Loader.WORKLOAD_TIER_TAG_NAME in self.workloadBlock):
 
       for currTier in self.tiers:
-          if Loader.SPEC_NAME and Loader.TIER_TAG_VALUE and Loader.TIER_START and Loader.TIER_STOP and Loader.TIER_ORCHESTRATION_DELAY in currTier:
+          if Loader.SPEC_NAME and Loader.TIER_TAG_VALUE and Loader.TIER_START and Loader.TIER_STOP in currTier:
               if(self.isFleetSubsetStrings(currTier)):
                 continue
               else:
