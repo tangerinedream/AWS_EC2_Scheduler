@@ -13,10 +13,13 @@ from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 from Worker import Worker, StopWorker, StartWorker
 from Utils import RetryNotifier
+from Utils import InstanceMetaData
+import getpass
 
 __author__ = "Gary Silverman"
 
 logger = logging.getLogger('Orchestrator') #The Module Name
+auditlogger = logging.getLogger("audit_logger")
 
 class Orchestrator(object):
 
@@ -820,11 +823,23 @@ if __name__ == "__main__":
 
 	# Launch the Orchestrator - the main component of the subsystem
 
-	Utils.initLogging(args.loglevel,args.workloadIdentifier)
+	LogStreamName = "NonEC2Instance"
+	NameTag = ""
+	Creds = ""
+	MetaDataError = ""
+	try:
+		InstanceID = InstanceMetaData().getInstanceID()
+		LogStreamName = InstanceMetaData().getInstanceEnvTag(InstanceID)
+		NameTag = InstanceMetaData().getInstanceNameTag(InstanceID)
+		Creds = InstanceMetaData().getCredentials()
+	except Exception, e:
+		MetaDataError = str(e)
+	Utils.initLogging(args.loglevel,args.workloadIdentifier,LogStreamName)
 
+	if MetaDataError:
+		logger.error(MetaDataError)
+	auditlogger.info({'UserName': getpass.getuser(), 'Profile': args.scalingProfile or '', 'Workload': args.workloadIdentifier,'Action': args.action, 'Hostname': NameTag,'AccessKey': Creds,'EnvironmentName': LogStreamName,}) #Logs this Dict to Audit stream in CW
 	orchMain = Orchestrator(args.workloadIdentifier, args.dynamoDBRegion, args.scalingProfile, dryRun)
-
-
 	# If testcases set, run them, otherwise run the supplied Action only
 	if( args.testcases > 0 ):	
 		orchMain.runTestCases()
@@ -840,6 +855,3 @@ if __name__ == "__main__":
 		orchMain.initializeState()
 		orchMain.sns_init()
 		orchMain.orchestrate(action)
-
-	
-
