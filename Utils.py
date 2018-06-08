@@ -161,7 +161,11 @@ def initLogging(loglevel,partitionTargetValue,LogStreamName):
         logger.addHandler(handler)
         logger.setLevel(loggingLevelSelected)
         auditlogger.addHandler(watchtower.CloudWatchLogHandler(log_group='Scheduler',stream_name='Audit'))	#Handler for Audit responsible for dispatch of appropriate Audit info to CW.
-        auditlogger.setLevel(logging.INFO) #  Sets the threshold for this handler to appropriate level. specifies the severity that will be dispatched to the appropriate destination, in this case cloudwatch.
+        if  (loggingLevelSelected > logging.INFO or loggingLevelSelected == logging.NOTSET ):
+            loggingLevelSelected = logging.INFO 
+            auditlogger.setLevel(loggingLevelSelected)#  Sets the threshold for this handler to appropriate level. specifies the severity that will be dispatched to the appropriate destination, in this case cloudwatch.
+        else:
+            auditlogger.setLevel(loggingLevelSelected)
         cloud_handler = watchtower.CloudWatchLogHandler(log_group='Scheduler',stream_name=LogStreamName)
         logger.addHandler(cloud_handler) #This is the Scheduler logs Handler responsible for dispatch of scheduler log messages .InstanceEnvTag is to identify instance log stream and which scheduler that the logs came from. 
 
