@@ -538,7 +538,8 @@ class Orchestrator(object):
 
 		if( killSwitch ):
 			bodyMsg = '%s: Kill Switch Enabled.   All scheduling actions on the workload will be bypassed.' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE]
-			self.publishSNSTopic(self.snsTopicSubjectLine, bodyMsg)
+			snsTopicSubjectLine = "Scheduler Kill Switch enabled"
+			self.snsInit.publishTopicMessage(snsTopicSubjectLine, bodyMsg)
 
 		else:
 
