@@ -15,6 +15,8 @@ from Worker import Worker, StopWorker, StartWorker
 from Utils import RetryNotifier
 from Utils import InstanceMetaData
 import getpass
+from redo retriable
+from sys import exit
 
 __author__ = "Gary Silverman"
 
@@ -453,6 +455,7 @@ class Orchestrator(object):
 
 		return( float(res) )
 	
+	@retriable(attempts=5,sleeptime=0, jitter=0)
 	def lookupInstancesByFilter(self, targetInstanceStateKey, tierName):
 	    # Use the filter() method of the instances collection to retrieve
 	    # all running EC2 instances.
@@ -491,22 +494,22 @@ class Orchestrator(object):
 		# Filter the instances
 		# NOTE: Only instances within the specified region are returned
 		targetInstanceColl = {}
-		instances_filter_done=0
-		filter_instances_api_retry_count=1
-		while (instances_filter_done==0):
-				try:	
-					targetInstanceColl = sorted(self.ec2R.instances.filter(Filters=targetFilter))
-					logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
-					if(logger.level==Orchestrator.LOG_LEVEL_DEBUG):
-						for curr in targetInstanceColl:
-							logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
+		try:
+			
+			targetInstanceColl = sorted(self.ec2R.instances.filter(Filters=targetFilter))
+			logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
+			if(logger.level==Orchestrator.LOG_LEVEL_DEBUG):
+				for curr in targetInstanceColl:
+					logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
 					instances_filter_done=1
-				except Exception as e:
-					msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->' % e
-					logger.error(msg + str(e))
-					subject_prefix = "Scheduler Exception in %s" % self.workloadRegion
-					self.snsInit.exponentialBackoff(filter_instances_api_retry_count,msg,subject_prefix)
-					filter_instances_api_retry_count += 1
+		except Exception as e:
+			msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->' % e
+			logger.error(msg + str(e))
+			#subject_prefix = "Scheduler Exception in %s" % self.workloadRegion
+			#self.snsInit.exponentialBackoff(5,msg,subject_prefix)
+			#filter_instances_api_retry_count += 1
+			raise e
+
 
 		return targetInstanceColl
 
@@ -598,11 +601,13 @@ class Orchestrator(object):
 		
 		# Find the running instances of this tier to stop
 		running=self.instanceStateMap[16]
-
-		instancesToStopList = self.lookupInstancesByFilter(
-			running,
-			tierName
-		)
+		try:
+		instancesToStopList = self.lookupInstancesByFilter(running,tierName)
+		except Exception as e:
+			msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->' % e
+			logger.error(msg + str(e))
+			exit() #more refactoring to do cleanup
+		
 
 		# Determine if operations on the Tier should be synchronized or not
 		tierSynchronized=self.isTierSynchronized(tierName, Orchestrator.TIER_STOP)
