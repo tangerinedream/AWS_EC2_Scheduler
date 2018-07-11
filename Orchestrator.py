@@ -36,9 +36,6 @@ class Orchestrator(object):
 
 	WORKLOAD_VPC_ID_KEY='VPC_ID'
 
-	WORKLOAD_SSM_S3_BUCKET_NAME='SSMS3BucketName'
-	WORKLOAD_SSM_S3_KEY_PREFIX_NAME='SSMS3KeyPrefixName'
-
 	WORKLOAD_SNS_TOPIC_NAME='SNSTopicName'
 
 	WORKLOAD_KILL_SWITCH="DisableAllSchedulingActions"
@@ -110,8 +107,6 @@ class Orchestrator(object):
 			Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_KEY,
 			Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE,
 			Orchestrator.WORKLOAD_VPC_ID_KEY,
-			Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME,
-			Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME,
 			Orchestrator.WORKLOAD_SNS_TOPIC_NAME,
 			Orchestrator.WORKLOAD_KILL_SWITCH,
 			Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY,
@@ -615,8 +610,6 @@ class Orchestrator(object):
 			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.max_api_request,self.snsInit,self.ec2_client)
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
-				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME],
-				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME],
 				self.getTierStopOverrideFilename(tierName),
 				self.getTierOperatingSystemType(tierName)
 			)

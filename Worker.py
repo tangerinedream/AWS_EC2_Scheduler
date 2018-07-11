@@ -3,7 +3,6 @@ import boto3
 import time
 from botocore.exceptions import ClientError
 from distutils.util import strtobool
-from SSMDelegate import SSMDelegate
 import botocore
 import Utils
 import logging
@@ -333,95 +332,6 @@ class StopWorker(Worker):
 
     def getWaitFlag(self):
         return( self.waitFlag )
-
-    def isOverrideFlagSet(self, S3BucketName, S3KeyPrefixName, overrideFileName, osType):
-        ''' Use SSM to check for existence of the override file in the guest OS.  If exists, don't Stop instance but log.
-        Returning 'True' means the instance will not be stopped.
-            Either because the override file exists, or the instance couldn't be reached
-        Returning 'False' means the instance will be stopped (e.g. not overridden)
-        '''
-
-
-        # If there is no overrideFilename specified, we need to return False.  This is required because the
-        # remote evaluation script may evaluate to "Bypass" with a null string for the override file.  Keep in
-        # mind, DynamodDB isn't going to enforce an override filename be set in the directive.
-        if not overrideFileName:
-            logger.info(self.instance.id + ' Override Flag not set in specification.  Therefore this instance will be actioned. ')
-            return False
-
-        if not osType:
-            logger.info(self.instance.id + ' Override Flag set BUT no Operating System attribute in specification. Therefore this instance will be actioned.')
-            return False
-
-
-        # Create the delegate
-        ssmDelegate = SSMDelegate(self.instance.id, S3BucketName, S3KeyPrefixName, overrideFileName, osType, self.ddbRegion, logger, self.workloadRegion)
-
-
-        # Very first thing to check is whether SSM is going to write the output to the S3 bucket.
-        #   If the bucket is not in the same region as where the instances are running, then SSM doesn't write
-        #   the result to the bucket and thus the rest of this method is completely meaningless to run.
-
-        if( ssmDelegate.isS3BucketInWorkloadRegion() == SSMDelegate.S3_BUCKET_IN_CORRECT_REGION ):
-
-            warningMsg=''
-            msg=''
-            # Send request via SSM, and check if send was successful
-            ssmSendResult=ssmDelegate.sendSSMCommand()
-            if( ssmSendResult ):
-                # Have delegate advise if override file was set on instance.  If so, the instance is not to be stopped.
-                overrideRes=ssmDelegate.retrieveSSMResults(ssmSendResult)
-                logger.debug('SSMDelegate retrieveSSMResults() results :' + overrideRes)
-
-                if( overrideRes == SSMDelegate.S3_BUCKET_IN_WRONG_REGION ):
-                    # Per SSM, the bucket must be in the same region as the target instance, otherwise the results will not be writte to S3 and cannot be obtained.
-                    self.overrideFlag=True
-                    warningMsg= Worker.SNS_SUBJECT_PREFIX_WARNING + ' ' + self.instance.id + ' Instance will be not be stopped because the S3 bucket is not in the same region as the workload'
-                    logger.warning(warningMsg)
-
-                elif( overrideRes == SSMDelegate.DECISION_STOP_INSTANCE ):
-                    # There is a result and it specifies it is ok to Stop
-                    self.overrideFlag=False
-                    logger.info(self.instance.id + ' Instance will be stopped')
-
-                elif( overrideRes == SSMDelegate.DECISION_NO_ACTION_UNEXPECTED_RESULT ):
-                    # Unexpected SSM Result, see log file.  Will default to overrideFlag==true out of abundance for caution
-                    self.overrideFlag=True
-                    warningMsg = Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped as there was an unexpected SSM result.'
-                    logger.warning(warningMsg)
-
-                elif( overrideRes == SSMDelegate.DECISION_RETRIES_EXCEEDED ):
-                    self.overrideFlag=True
-                    warningMsg = Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped # retries to collect SSM result from S3 was exceeded'
-                    logger.warning(warningMsg)
-
-                else:
-                    # Every other result means the instance will be bypassed (e.g. not stopped)
-                    self.overrideFlag=True
-                    msg=Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL +  ' ' + self.instance.id + ' Instance will be not be stopped because override file was set'
-                    logger.info(msg)
-
-            else:
-                self.overrideFlag=True
-                warningMsg=Worker.SNS_SUBJECT_PREFIX_WARNING +  ' ' + self.instance.id + ' Instance will be not be stopped because SSM could not query it'
-                logger.warning(warningMsg)
-
-        else:
-            self.overrideFlag=True
-            warningMsg=Worker.SNS_SUBJECT_PREFIX_WARNING + ' SSM will not be executed as S3 bucket is not in the same region as the workload. [' + self.instance.id + '] Instance will be not be stopped'
-            logger.warning(warningMsg)
-
-        if( self.overrideFlag == True ):
-            if( warningMsg ):
-                self.snsInit.publishTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
-            else:
-                self.snsInit.publishTopicMessage(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, msg)
-
-        return( self.overrideFlag )
-
-    def setOverrideFlagSet(self, overrideFlag):
-        self.overrideFlag=strtobool(overrideFlag)
-
 
     def execute(self, S3BucketName, S3KeyPrefixName, overrideFileName, osType):
         if( self.isOverrideFlagSet(S3BucketName, S3KeyPrefixName, overrideFileName, osType) == False ):
