@@ -57,8 +57,6 @@ class Orchestrator(object):
 	TIER_NAME='TierTagValue'
 	TIER_SEQ_NBR='TierSequence'
 	TIER_SYCHRONIZATION='TierSynchronization'
-	TIER_STOP_OVERRIDE_FILENAME='TierStopOverrideFilename'
-	TIER_STOP_OS_TYPE='TierStopOverrideOperatingSystem' # Valid values are Linux and Windows
 
 	INTER_TIER_ORCHESTRATION_DELAY='InterTierOrchestrationDelay' # The sleep time between commencing an action on this tier
 	INTER_TIER_ORCHESTRATION_DELAY_DEFAULT = 5
@@ -137,8 +135,6 @@ class Orchestrator(object):
 			Orchestrator.TIER_NAME,
 			Orchestrator.TIER_SEQ_NBR,
 			Orchestrator.TIER_SYCHRONIZATION,
-			Orchestrator.TIER_STOP_OVERRIDE_FILENAME,
-			Orchestrator.TIER_STOP_OS_TYPE,
 			Orchestrator.INTER_TIER_ORCHESTRATION_DELAY
 		]
 
@@ -391,44 +387,6 @@ class Orchestrator(object):
 		logger.debug('isTierSynchronized for tierName==%s, tierAction==%s is syncFlag==%s' % (tierName, tierAction, res) )
 		return( res )
 
-	def getTierStopOverrideFilename(self, tierName):
-
-		# Get the Tier Named tierName
-		tierAttributes = self.tierSpecDict[tierName]
-
-		# Get the dictionary for the correct Action
-		tierActionAttribtes={}
-
-		# Locate the TIER_STOP Dictionary method only applies to TIER_STOP
-		tierActionAttributes = tierAttributes[Orchestrator.TIER_STOP]
-		
-		# Return the value in the Dict for TierStopOverrideFilename
-		if Orchestrator.TIER_STOP_OVERRIDE_FILENAME in tierActionAttributes:
-			res = tierActionAttributes[Orchestrator.TIER_STOP_OVERRIDE_FILENAME]
-		else:
-			res = ''
-
-		return( res )
-
-	def getTierOperatingSystemType(self, tierName):
-
-		# Get the Tier Named tierName
-		tierAttributes = self.tierSpecDict[tierName]
-
-		# Get the dictionary for the correct Action
-		tierActionAttribtes={}
-
-		# Locate the TIER_STOP Dictionary
-		tierActionAttributes = tierAttributes[Orchestrator.TIER_STOP]
-		
-		# Return the value in the Dict for TierStopOverrideOperatingSystem
-		if Orchestrator.TIER_STOP_OS_TYPE in tierActionAttributes:
-			res = tierActionAttributes[Orchestrator.TIER_STOP_OS_TYPE]
-		else:
-			res = ''
-
-		return( res )
-
 	def getInterTierOrchestrationDelay(self, tierName, tierAction):
 
 		# Get the Tier Named tierName
@@ -609,10 +567,7 @@ class Orchestrator(object):
 		for currInstance in instancesToStopList:
 			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.max_api_request,self.snsInit,self.ec2_client)
 			stopWorker.setWaitFlag(tierSynchronized)
-			stopWorker.execute(
-				self.getTierStopOverrideFilename(tierName),
-				self.getTierOperatingSystemType(tierName)
-			)
+			stopWorker.stopInstance()
 
 		# Configured delay to be introduced prior to allowing the next tier to be Actioned.
 		# It may make sense to allow some amount of time for the instances to Stop, prior to Orchestration continuing.
@@ -765,9 +720,6 @@ class Orchestrator(object):
 		
 		self.initializeState()
 
-		# print 'Role_Web override file loc ', self.getTierStopOverrideFilename('Role_Web')
-		# print 'Role_AppServer override file loc ', self.getTierStopOverrideFilename('Role_AppServer')
-		# print 'Role_DB override file loc ', self.getTierStopOverrideFilename('Role_DB')
 		# Test Case: Stop an Environment
 		logger.info('\n### Orchestrating START Action ###')
 		self.orchestrate(Orchestrator.ACTION_START )

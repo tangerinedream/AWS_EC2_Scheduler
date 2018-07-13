@@ -109,9 +109,6 @@ Basic setup consists of creating the following:
 
 You'll be prompted for the following CloudFormation Parameters when launching the stack:
 * Your account number,
-* Desired bucket name for S3 (temporary use by AWS SSM).  
-    - You can strip out if you do not plan to use and advanced feature called [Instance Exemption](#instance-exemption).  
-    - If you plan to use this feature please read [SSM Prerequisites](#ssm-prerequisites) as there are rules regarding what region the bucket needs to live in.
 
 
 ### Define A Workload
@@ -186,7 +183,6 @@ If running via Lambda Scheduling Actions:
 Contents:
 1. [Command Line Options](#command-line-options)
 1. [Provided Example Workload](#provided-example-workload)
-1. [Enabling SSM](#enabling-ssm)
 
 ### Command Line Options
 Below are the usage flags for launching the Orchestrator from the command line:
@@ -253,8 +249,6 @@ Here is an example workload to get you quickly up to speed.  The steps are very 
       "WorkloadRegion": "us-west-2",
       "SpecName": "ExampleTestCase",
       "SNSTopicName": "SchedulerTesting",
-      "SSMS3BucketName": "myBucketName",
-      "SSMS3KeyPrefixName": "ssmRemoteComandResults",
       "TierFilterTagName": "Role",
       "VPC_ID": "vpc-xyz"
     }
@@ -323,30 +317,6 @@ Now, add the Tiers (Web, App, and DB).  Pay particular attention to the TierSequ
 
 In the example workload, you see the Tag Name for the Workload is *Environment*.  This example Workload consists of 3 Tiers and you can easily see that every Tier Tag Name is *ApplicationRole*, while each Tier has a different value.  Every instance in the Workload belongs to one of {*Web*, *App*, or *DB*} tiers.
 
-### Enabling SSM
-ToDo: Add diagram
-
-Enabling this advanced feature will allow you to exclude a specific instance from being Stopped, by setting a flag in the instance's filesystem.  Recall, the Scheduler doesn't manage the workload by scheduling instances.  Rather at runtime, it visits each Tier within the Workload in the dependency order you specified, and only at that point does it determine instance membership in the tier.  As such, the exemption request is handled outside of the context of the Scheduler, who will simply check to see if the exemption was set - by whatever means makes sense for your or your organization.
-
-Please be advised the Scheduler uses pessimistic/risk averse decision making. If for whatever reason the AWS_EC2_Scheduler cannot positively confirm the override file has not been set, it will *not* stop the instance.  With SSM enabled, the Scheduler will only stop an instance if it can confirm the override file is absent.  If, for example, the SSM command times-out prior to obtaining a result, that instance will not be stopped.  This is by design.
-
-#### SSM Prerequisites
-1. A slightly more advanced IAM Policy will need to be used to enable these features.  Additionally, an IAM Policy will need to be applied to the Instance Profile of the target instances.  Please see [Enhanced IAM Policies](#enhanced-iam-policies)
-1. Create an S3 bucket for the SSM processing.  This bucket will be the temporary storage SSM requires to store results.  ***Note*** Due to a limitation in SSM, the bucket must exist in the same region as where the target ssm instances (the workload) are running.  Otherwise, SSM will **not** log the result, and as such, this software will poll S3 for 5 minutes per instance waiting for the SSM results to appear in S3, which will never happen.  With pessimistic processing, in this scenario the Scheduler will *not* Stop the instance.
-    1. Configure Lifecycle rules on your bucket for 1 day, as the SSM result files are temporary and not easily accessible by anything other than the AWS_EC2_Scheduler (especially humans).  As such once the result is obtained, the file is worthless.  24 hours is plenty of time.
-    1. Network visibility is required to the target instances.  If you are running the software outside of EC2, you may need a public IP address on target instances.  You can check for network visibility by using the Management Console to run an SSM test command before attempting to use this software.  If the Management Console (EC2-->Commands-->Command History-->Run Commmand) Filter doesn't show your targeted instances, then you will likely need to add a Public IP, or assign an EIP.  This is an SSM dependency. 
-    
-For a full set of SSM Prerequsites, look [Here](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/remote-commands-prereq.html)
-
-
-#### Instance Exemption Details
-This is an advanced, optional feature.  Since the product uses SSM, it will can check for the existence of an "override file" on the instance itself, only if you have configured *TierStopOverrideFilename* and *TierStopOverrideOperatingSystem*.  When configured and the filename is present on the target instance in the correct location, the product will **not** stop the instance but rather bypass it.  This will be logged in the Orchestrator.log file as well as published via SNS.  The content of the override file is immaterial.
-
-You specify the location of the Override File, as well as the Operating System.  SSM will simply check whether the file exists in the location you configure.  If the file exists, the instance will be bypassed.
-
-SSM will introduce some latency in terms of how quickly the instance is attempted for Stop Action.
-
-Be sure to set the SSM timeout as directed by AWS as they are running the SSM service.  By design, this feature uses pessimistic decisioning and if a positive confirmation cannot be obtained, the AWS_EC2_Scheduler will leave the instance running.  Therefore when SSM timesout, it will leave the instance running.
 
 ---
 ## Architecture Guide
@@ -367,7 +337,7 @@ The scheduler will Start or Stop your instances on a Tier by Tier basis, for a g
 ### Runtime Architecture
 The Scheduler will operate in the following manner:
 1. Reads Workload specific information from DynamoDB
-1. Uses EC2 & SSM API’s to identify instance membership within Tiers
+1. Uses EC2 API’s to identify instance membership within Tiers
 1. Actions Start, Scale, or Stop on a Tier by Tier basis
 ![Scheduler_RuntimeArchitecture.png](https://s3.amazonaws.com/gman-aws-ec2-scheduler/github-diagrams/Scheduler_RuntimeArchitecture.png)
 
@@ -397,12 +367,10 @@ The workload specification contains tier independent configuration of the worklo
 |**WorkloadFilterTagName**|The name of the tag *key* (on the instance) that will be used to group the unique members of this workload.  In the example DynamoDB Table, "Environment" is the tag key.|Yes|
 |**WorkloadFilterTagValue**|The tag *value* identifying the unique set of members within the EnvFilterTagName. In the example DynamoDB Table, "ENV001" is the tag value|Yes|
 |**WorkloadRegion**|The AWS region identifier where the _workload_ runs, **not** the region where this open source product is executed|Yes|
-|**SNSTopicName**|The name of the topic to publish SSM related statuses.  For example, whether the override file was set, or other reasons why an instance will not be stopped.|Yes|
+|**SNSTopicName**|The name of the topic to publish related statuses.  For example, whether the override file was set, or other reasons why an instance will not be stopped.|Yes|
 |**SpecName**|The unique name of the Workload, the key of the WorkloadSpecification table and foreign key of the TierSpecification table|Yes|
 |**TierFilterTagName**|The name of the tag *key* on the instance used to identify the Tier.|Yes|
 |**VPC_ID**|Recommended parameter to limit the scope of the query for instance matching.|Not required but recommended|
-|**SSMS3BucketName**|The name of the bucket where the SSM results will be places.  *Note*: It is suggested you enable S3 Lifecycle rules on the bucket as the SSM Agent creates a new entry everytime it checks an instance|No. Used only with SSM/Instance Exemption|
-|**SSMS3BucketName**|The path of the S3BucketName|No. Used only with SSM/Instance Exemption|
 |**ScaleInstanceDelay**|Specifies the sleep delay in seconds between the instance resize (Scaling Action) and instance Start.  This delay is necessary to address the eventual consistency issue seen on the AWS side when resizing and immediately Starting an instance.|No|
 |**DisableAllSchedulingActions**|When this attribute is present in the Workload Table and has a string value of '1', <b>no</b> processing will occur across the entire workload.  This attribute is a <b>global override</b> and results in no actions being taken. Any value other than a string of '1', will be ignored and processing will continue as if the attribute was not even present.|No|
 
@@ -416,8 +384,6 @@ The below JSON is an example of a row in the WorkloadSpecification DynamoDB tabl
   "WorkloadRegion": "us-west-2",
   "SpecName": "BotoTestCase1",
   "SNSTopicName": "SchedulerTesting",
-  "SSMS3BucketName": "myBucketName",
-  "SSMS3KeyPrefixName": "ssmRemoteComandResults",
   "TierFilterTagName": "Role",
   "VPC_ID": "vpc-xyz"
 }
@@ -456,7 +422,7 @@ Here are a few things you **need** to know about the Tier Specification:
 |**TierStopOverrideOperatingSystem**|The name of the OS in the guest.  Valid values are "Linux", or "Windows"|No. Unless you configure *TierStopOverrideFilename*|
 
 #### JSON: TierSpecification Example
-The below JSON is a row in the TierSpecification DynamoDB table, and can be mapped several DynamoDB Attributes, three of which will contain JSON.  This tier, named *Role_Web* is Started as the third tier (sequence == 2) when the workload starts and is Stopped first.  Every instance is checked prior to Stopping (because Instance Exemption was configured and SSM enabled by the Administrator) to determine a file named StopOverride exists in the tmp directory (content of file is irrelevant), and if so the instance will not be stopped.  In the event of a Scaling request, with a provided profile name of "profileC", all instances within this tier will first be changed to t2.large prior to Starting.  Not all attributes are required.
+The below JSON is a row in the TierSpecification DynamoDB table, and can be mapped several DynamoDB Attributes, three of which will contain JSON.  This tier, named *Role_Web* is Started as the third tier (sequence == 2) when the workload starts and is Stopped first. In the event of a Scaling request, with a provided profile name of "profileC", all instances within this tier will first be changed to t2.large prior to Starting.  Not all attributes are required.
 ```json
 {
   "SpecName": "BotoTestCase1",
@@ -560,7 +526,6 @@ Enable this policy on the instance or Lambda function running the Orchestrator.p
 
 ### Enhanced IAM Policies
 #### Enhanced Policy for the Instance or Lambda function running the Orchestrator.py
-Use this policy if you wish to enable SSM for the Instance Exemption capability.  See here: [Enabling SSM](#enabling-ssm)
 Enable this policy on the instance or Lambda function running the Orchestrator.py
 ```json
 {
@@ -594,19 +559,6 @@ Enable this policy on the instance or Lambda function running the Orchestrator.p
             "Resource": "arn:aws:sns:us-west-2:<your-account-number-here>:<your-sns-topic(s)>"
         },
         {
-            "Sid": "Stmt1465181721000",
-            "Effect": "Allow",
-            "Action": [
-                "s3:GetObject",
-                "s3:ListBucket",
-                "s3:GetBucketLocation"
-            ],
-            "Resource": [
-                "arn:aws:s3:::<your-bucket-name-here>",
-                "arn:aws:s3:::<your-bucket-name-here>/*"
-            ]
-        },
-        {
             "Sid": "Stmt1465182118000",
             "Effect": "Allow",
             "Action": [
@@ -618,39 +570,8 @@ Enable this policy on the instance or Lambda function running the Orchestrator.p
                 "arn:aws:dynamodb:<region-of-your-dynamodb-tables>:<your-account-number here>:table/TierSpecification"
             ]
         },
-        {
-            "Sid": "Stmt1465183822000",
-            "Effect": "Allow",
-            "Action": [
-                "ssm:SendCommand",
-                "ssm:ListDocuments",
-                "ssm:DescribeDocument",
-                "ssm:GetDocument",
-                "ssm:DescribeInstanceInformation",
-                "ssm:CancelCommand",
-                "ssm:ListCommands",
-                "ssm:ListCommandInvocations"
-            ],
-            "Resource": [
-                "*"
-            ]
-        }
+        
     ]
 }
 ``` 
-#### Enhanced Policy for the Workload instances
-Additionally, when using SSM you will need to enable an IAM Policy on the instances in your Workload.  In the case of Windows based instances, SSM is already installed.  For Linux, you'll need to deploy the SSM agent and provide the below policy to allow that instance to interact with the AWS SSM service.
 
-Simply attach the AWS Managed Policy called *AmazonEC2RoleforSSM* to the instance profile under which the linux instance is running.
-
-Here is an example of installting SSM on your linux instances 
-[Install SSM on your target instances](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/install-ssm-agent.html "Installing SSM").  
-
-Below is an example for Ubuntu, using UserData
-~~~~
-      #!/bin/bash
-      cd /tmp			
-      curl https://amazon-ssm-us-west-2.s3.amazonaws.com/latest/debian_amd64/amazon-ssm-agent.deb -o amazon-ssm-agent.deb
-      dpkg -i amazon-ssm-agent.deb
-      systemctl start amazon-ssm-agent 
-~~~~

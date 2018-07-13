@@ -4,12 +4,6 @@ Description: >
   Stack creates Infrastructure for AWS_EC2_Scheduler.
 
 Parameters:
-  BucketNameParam:
-    Type: String
-    Description: >
-      Enter a bucket name for SSM to use for temporary file use.
-      Note: The bucket region must be in the same region as where the workloads runs,
-      as SSM does not support Cross-Region buckets
 
 Resources:
   SchedulerSNSTopic:
@@ -17,53 +11,14 @@ Resources:
     Properties:
       DisplayName: Scheduler
       TopicName: SchedulerSNSTopic
-
-  SchedulerS3Bucket:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName:
-        Ref: BucketNameParam
-      LifecycleConfiguration:
-        Rules:
-          -
-            ExpirationInDays: 1
-            Status: Enabled
-            TagFilters:
-              -
-                Key : "AWS_EC2_Scheduler"
-                Value : "Lifecycle Rule for Bucket of SSM Temp Files"
-      Tags:
-        -
-          Key : "AWS_EC2_Scheduler"
-          Value : "Bucket for SSM Temp Files"
-
-
+  
   SchedulerSNSTopic:
     Type: "AWS::SNS::Topic"
     Properties:
       DisplayName: Scheduler
       TopicName: SchedulerSNSTopic
 
-  SchedulerS3Bucket:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName:
-        Ref: BucketNameParam
-      LifecycleConfiguration:
-        Rules:
-          -
-            ExpirationInDays: 1
-            Status: Enabled
-            TagFilters:
-              -
-                Key : "AWS_EC2_Scheduler"
-                Value : "Lifecycle Rule for Bucket of SSM Temp Files"
-      Tags:
-        -
-          Key : "AWS_EC2_Scheduler"
-          Value : "Bucket for SSM Temp Files"
-
-  SchedulerDynamoDBWorkloadTable:
+   SchedulerDynamoDBWorkloadTable:
     Type: "AWS::DynamoDB::Table"
     Properties:
       TableName: WorkloadSpecification
@@ -172,23 +127,6 @@ Resources:
                 { "Fn::GetAtt" : [ "SchedulerDynamoDBWorkloadTable", "Arn" ] },
                 { "Fn::GetAtt" : [ "SchedulerDynamoDBTierTable", "Arn" ] }
               ]
-          },
-          {
-              "Sid": "SSMStatement",
-              "Effect": "Allow",
-              "Action": [
-                  "ssm:SendCommand",
-                  "ssm:ListDocuments",
-                  "ssm:DescribeDocument",
-                  "ssm:GetDocument",
-                  "ssm:DescribeInstanceInformation",
-                  "ssm:CancelCommand",
-                  "ssm:ListCommands",
-                  "ssm:ListCommandInvocations"
-              ],
-              "Resource": [
-                  "*"
-              ]
           }
-        ]
+                  ]
       }

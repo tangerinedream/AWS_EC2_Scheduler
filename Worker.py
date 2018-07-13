@@ -332,7 +332,3 @@ class StopWorker(Worker):
 
     def getWaitFlag(self):
         return( self.waitFlag )
-
-    def execute(self, S3BucketName, S3KeyPrefixName, overrideFileName, osType):
-        if( self.isOverrideFlagSet(S3BucketName, S3KeyPrefixName, overrideFileName, osType) == False ):
-            self.stopInstance()
