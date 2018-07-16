@@ -93,20 +93,18 @@ class StartWorker(Worker):
 					try:
 						self.addressELBRegistration()
 					except Exception as e:
-						retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::addressELBRegistration() has encountered an exception", str(e)))  # See action function  https://github.com/mozilla-releng/redo
-						exit()
-
+						retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Worker::addressELBRegistration() has encountered an exception", str(e)))  # See action function  https://github.com/mozilla-releng/redo
 
 					logger.debug('Starting EC2 instance: %s' % self.instance.id)
 					try:
-						result = self.instance.start()
+						result = retry(self.instance.start, attempts=5, sleeptime=0, jitter=0)
 						logger.debug('Starting EC2 instance: %s' % self.instance.id)
 						logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 					except Exception as e:
 						msg = 'Worker::instance.start() Exception encountered during instance start ---> %s' % e
 						logger.error(msg)
-						retry(self.mysnsInit.sendSns, attempts=5, jitter=1, args=("Exception - EC2 instance start::Worker::instance.start() Exception encountered during instance start",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-						exit()
+						retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Exception - EC2 instance Start::Worker::instance.start() Exception encountered during instance start",str(e)))  # See action function  https://github.com/mozilla-releng/redo
+
 
 	def scaleInstance(self, modifiedInstanceType):
 
@@ -138,21 +136,21 @@ class StartWorker(Worker):
 				modifiedInstanceTypeValue = modifiedInstanceTypeList[0] + '.' + modifiedInstanceTypeList[1]
 				InstanceTypeKwargs = {"InstanceType":{'Value': modifiedInstanceTypeValue}}
 				try:
-					result = retry(self.instance.modify_attribute,attempts=5,jitter=1,sleeptime=0,kwargs=InstanceTypeKwargs)
+					result = retry(self.instance.modify_attribute,attempts=5, sleeptime=0, jitter=0,kwargs=InstanceTypeKwargs)
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().modifiedInstanceTypeValue Exception for EC2 instance %s , error --> %s ' % (self.instance, str(e))
 					logger.warning(msg)
 					retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+
 
 				EbsOptimizeKwargs = {"EbsOptimized":{'Value': ebsOptimizedAttr}}
 				try:
-					result = retry(self.instance.modify_attribute,attempts=5,sleeptime=0,jitter=1,kwargs=EbsOptimizeKwargs)
+					result = retry(self.instance.modify_attribute,attempts=5, sleeptime=0, jitter=0,kwargs=EbsOptimizeKwargs)
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().ebsOptimizedAttr Exception for EC2 instance %s, error --> %s' % (self.instance, str(e))
 					logger.warning(msg)
-					retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+					retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
+
 
 
 				# It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
@@ -176,41 +174,41 @@ class StartWorker(Worker):
 				try:
 					self.checkT2Unlimited()
 				except Exception as e:
-					retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::describe_instance_credit_specifications() has encountered an exception" ,str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+					retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Worker::checkT2Unlimited() has encountered an exception" ,str(e)))  # See action function  https://github.com/mozilla-releng/redo
+
 
 				if self.current_t2_value == "standard":
 					try:
 						logger.info('t2Unlimited(): Trying to modify EC2 instance credit specification')
-						result = retry(self.ec2_client.modify_instance_credit_specification,attempts=5,jitter=1,kwargs= {"InstanceCreditSpecifications":[{'InstanceId': self.instance.id,'CpuCredits': 'unlimited'}]} )
+						result = retry(self.ec2_client.modify_instance_credit_specification,attempts=5, sleeptime=0,jitter=1,kwargs= {"InstanceCreditSpecifications":[{'InstanceId': self.instance.id,'CpuCredits': 'unlimited'}]} )
 						logger.info('t2Unlimited(): EC2 instance credit specification modified')
 					except Exception as e:
 						msg = 'Worker::instance.modify_attribute().t2Unlimited Exception for EC2 instance %s, error --> %s' % (self.instance, str(e))
 						logger.warning(msg)
-						retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::checkT2Unlimited::instance.modify_attribute().t2Unlimited has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-						exit()
+						retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Worker::checkT2Unlimited::instance.modify_attribute().t2Unlimited has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
+
 
 		else:
 			try:
 				self.checkT2Unlimited()
 			except Exception as e:
-				retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::checkT2Unlimited::describe_instance_credit_specifications() Exception has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-				exit()
+				retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Worker::checkT2Unlimited::describe_instance_credit_specifications() Exception has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
+
 
 			if self.current_t2_value == "unlimited":
 				logger.debug('t2Unlimited(): Current T2 value: %s' % self.current_t2_value)
 
 				try:
 					logger.info('t2Unlimited(): Trying to modify EC2 instance credit specification')
-					result = retry(self.ec2_client.modify_instance_credit_specification, attempts=5,jitter=1,
+					result = retry(self.ec2_client.modify_instance_credit_specification, attempts=5, sleeptime=0, jitter=0,
 					kwargs= {"InstanceCreditSpecifications":[{'InstanceId': self.instance.id,'CpuCredits': 'standard'}]} )
 					logger.info('t2Unlimited(): EC2 instance credit specification modified')
 
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().t2standard Exception in progress for EC2 instance %s, error --> %s' % (self.instance, str(e))
 					logger.warning(msg)
-					retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::instance.modify_attribute().t2standard Exception has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+					retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Worker::instance.modify_attribute().t2standard Exception has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
+
 
 	@retriable(attempts=5,sleeptime=0, jitter=0)
 	def checkT2Unlimited(self):
@@ -225,7 +223,7 @@ class StartWorker(Worker):
 
 		return self.current_t2_value
 
-	@retriable(attempts=5, sleeptime=0, jitter=0)
+
 	def start(self):
 		self.startInstance()
 
@@ -253,22 +251,15 @@ class StopWorker(Worker):
 		if (self.dryRunFlag):
 			logger.warning('DryRun Flag is set - instance will not be stopped')
 		else:
-			success_instance_stop = 0
-			stop_instance_api_retry_count = 1
-			while (success_instance_stop == 0):
-				try:
-					# EC2.Instance.stop()
-					result = self.instance.stop()
-					logger.debug("Succesfully stopped EC2 instance %s" % (self.instance.id))
-					logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
-					success_instance_stop = 1
-				except Exception as e:
-					msg = 'Worker::instance.stop() Exponential Backoff in progress for EC2 instance %s, retry count = %s, error --> %s' % (
-					self.instance, stop_instance_api_retry_count, str(e))
-					logger.warning(msg)
-					subject_prefix = "Exception instance.stop"
-					self.snsInit.exponentialBackoff(stop_instance_api_retry_count, msg, subject_prefix)
-					stop_instance_api_retry_count += 1
+			try:
+				result = retry(self.instance.stop, attempts=5, sleeptime=0, jitter=0)
+				logger.debug("Succesfully stopped EC2 instance %s" % (self.instance.id))
+				logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
+			except Exception as e:
+				msg = 'Worker::instance.stop() Exception occured for EC2 instance %s, error --> %s' % (self.instance,  str(e))
+				logger.warning(msg)
+				retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Exception instance.stopInstance() Exception encountered during instance stop",str(e)))  # See action function  https://github.com/mozilla-releng/redo
+
 
 		# If configured, wait for the stop to complete prior to returning
 		logger.debug('The bool value of self.waitFlag %s, is %s' % (self.waitFlag, bool(self.waitFlag)))

@@ -555,7 +555,7 @@ class Orchestrator(object):
 					orchMain.lookupELBs()
 				except Exception as e:
 					retry(self.mysns.sendSns, attempts=5, args=("orchMain.lookupELBs() has encountered an exception ", str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+
 	
 				# Sequence the tiers per the START order
 				self.sequenceTiers(Orchestrator.TIER_START)
@@ -600,7 +600,7 @@ class Orchestrator(object):
 			instancesToStopList = self.lookupInstancesByFilter(running,tierName)
 		except Exception as e:
 			retry(self.mysns.sendSns,attempts=5,args=("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e))) # See action function  https://github.com/mozilla-releng/redo
-			exit()
+
 		
 
 		# Determine if operations on the Tier should be synchronized or not
@@ -642,14 +642,14 @@ class Orchestrator(object):
 			stoppedInstancesList = self.lookupInstancesByFilter(stopped,tierName)
 		except Exception as e:
 			retry(self.mysns.sendSns,attempts=5,args=("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e))) # See action function  https://github.com/mozilla-releng/redo
-			exit()
+
 
 		running=self.instanceStateMap[16]
 		try:
 			runningInstancesList = self.lookupInstancesByFilter(running,tierName)
 		except Exception as e:
 			retry(self.mysns.sendSns,attempts=5,args=("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e))) # See action function  https://github.com/mozilla-releng/redo
-			exit()
+
 
 
 		totalInstancesList = stoppedInstancesList + runningInstancesList
@@ -801,10 +801,16 @@ class Orchestrator(object):
 
 
 	def mysns_init(self):
-		#sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
-		sns_topic_name = "tongetopic1"
-		sns_workload   = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
-		self.mysns		= SnsNotifier(sns_topic_name,sns_workload)
+		try:
+			sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
+			#sns_topic_name = "tongetopic1"
+			sns_workload   = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
+			self.mysns		= SnsNotifier(sns_topic_name,sns_workload)
+		except Exception as e:
+			logger.info('Orchestrator::mysns_init() sns_topic_name has experienced an exception --> ' + str(e))
+
+
+
 
 if __name__ == "__main__":
 	# python Orchestrator.py -i workloadIdentier -r us-west-2
