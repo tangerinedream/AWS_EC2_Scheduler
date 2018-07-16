@@ -171,3 +171,12 @@ def initLogging(loglevel,partitionTargetValue,LogStreamName):
 
 
 
+class SnsNotifier(object):
+
+	def __init__(self, topic,workload):
+		self.topic = topic
+		self.workload = workload
+	def sendSns(self,subject,message):
+		client =boto3.resource('sns')
+		topic = client.create_topic(Name=self.topic)
+		topic.publish(Subject=subject,Message=str( self.workload ) + str( message ))
