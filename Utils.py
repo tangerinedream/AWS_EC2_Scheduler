@@ -160,7 +160,7 @@ def initLogging(loglevel,partitionTargetValue,LogStreamName):
 
         logger.addHandler(handler)
         logger.setLevel(loggingLevelSelected)
-        auditlogger.addHandler(watchtower.CloudWatchLogHandler(log_group='Scheduler',stream_name='Audit'))	#Handler for Audit responsible for dispatch of appropriate Audit info to CW.
+        auditlogger.addHandler(watchtower.CloudWatchLogHandler(log_group='Scheduler',stream_name='TESTREDO'))	#Handler for Audit responsible for dispatch of appropriate Audit info to CW.
         if  (loggingLevelSelected > logging.INFO or loggingLevelSelected == logging.NOTSET ):
             loggingLevelSelected = logging.INFO 
             auditlogger.setLevel(loggingLevelSelected)#  Sets the threshold for this handler to appropriate level. specifies the severity that will be dispatched to the appropriate destination, in this case cloudwatch.
@@ -171,3 +171,12 @@ def initLogging(loglevel,partitionTargetValue,LogStreamName):
 
 
 
+class SnsNotifier(object):
+
+	def __init__(self, topic,workload):
+		self.topic = topic
+		self.workload = workload
+	def sendSns(self,subject,message):
+		client =boto3.resource('sns')
+		topic = client.create_topic(Name=self.topic)
+		topic.publish(Subject=subject,Message=str( self.workload ) + str( message ))
