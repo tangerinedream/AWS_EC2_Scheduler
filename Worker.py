@@ -183,7 +183,7 @@ class StartWorker(Worker):
 				if self.current_t2_value == "standard":
 					try:
 						logger.info('t2Unlimited(): Trying to modify EC2 instance credit specification')
-						result = retry(self.ec2_client.modify_instance_credit_specification,attempts=5,jitter=1,kwargs= {"InstanceCreditSpecifications":[{'InstanceId': self.instance.id,'CpuCredits': 'unlimited'}]} )
+						result = retry(self.ec2_client.modify_instance_credit_specification,attempts=5, sleeptime=0,jitter=1,kwargs= {"InstanceCreditSpecifications":[{'InstanceId': self.instance.id,'CpuCredits': 'unlimited'}]} )
 						logger.info('t2Unlimited(): EC2 instance credit specification modified')
 					except Exception as e:
 						msg = 'Worker::instance.modify_attribute().t2Unlimited Exception for EC2 instance %s, error --> %s' % (self.instance, str(e))
@@ -201,7 +201,7 @@ class StartWorker(Worker):
 
 				try:
 					logger.info('t2Unlimited(): Trying to modify EC2 instance credit specification')
-					result = retry(self.ec2_client.modify_instance_credit_specification, attempts=5,jitter=1,
+					result = retry(self.ec2_client.modify_instance_credit_specification, attempts=5, sleeptime=0, jitter=0,
 					kwargs= {"InstanceCreditSpecifications":[{'InstanceId': self.instance.id,'CpuCredits': 'standard'}]} )
 					logger.info('t2Unlimited(): EC2 instance credit specification modified')
 
@@ -223,7 +223,7 @@ class StartWorker(Worker):
 
 		return self.current_t2_value
 
-	@retriable(attempts=5, sleeptime=0, jitter=0)
+
 	def start(self):
 		self.startInstance()
 
@@ -253,22 +253,15 @@ class StopWorker(Worker):
 		if (self.dryRunFlag):
 			logger.warning('DryRun Flag is set - instance will not be stopped')
 		else:
-			success_instance_stop = 0
-			stop_instance_api_retry_count = 1
-			while (success_instance_stop == 0):
-				try:
-					# EC2.Instance.stop()
-					result = self.instance.stop()
-					logger.debug("Succesfully stopped EC2 instance %s" % (self.instance.id))
-					logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
-					success_instance_stop = 1
-				except Exception as e:
-					msg = 'Worker::instance.stop() Exponential Backoff in progress for EC2 instance %s, retry count = %s, error --> %s' % (
-					self.instance, stop_instance_api_retry_count, str(e))
-					logger.warning(msg)
-					subject_prefix = "Exception instance.stop"
-					self.snsInit.exponentialBackoff(stop_instance_api_retry_count, msg, subject_prefix)
-					stop_instance_api_retry_count += 1
+			try:
+				result = retry(self.instance.stop, attempts=5, sleeptime=0, jitter=0)
+				logger.debug("Succesfully stopped EC2 instance %s" % (self.instance.id))
+				logger.info('stopInstance() for ' + self.instance.id + ' result is %s' % result)
+			except Exception as e:
+				msg = 'Worker::instance.stop() Exception occured for EC2 instance %s, error --> %s' % (self.instance,  str(e))
+				logger.warning(msg)
+				retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Exception instance.stopInstance() Exception encountered during instance stop",str(e)))  # See action function  https://github.com/mozilla-releng/redo
+
 
 		# If configured, wait for the stop to complete prior to returning
 		logger.debug('The bool value of self.waitFlag %s, is %s' % (self.waitFlag, bool(self.waitFlag)))
