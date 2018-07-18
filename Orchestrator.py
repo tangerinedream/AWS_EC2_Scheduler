@@ -12,9 +12,13 @@ from distutils.util import strtobool
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 from Worker import Worker, StopWorker, StartWorker
-from Utils import RetryNotifier
+#from Utils import RetryNotifier,SnsNotifier
+from Utils import SnsNotifier
 from Utils import InstanceMetaData
 import getpass
+from redo import retriable,retry  # See action function  https://github.com/mozilla-releng/redo
+from sys import exit
+
 
 __author__ = "Gary Silverman"
 
@@ -179,7 +183,7 @@ class Orchestrator(object):
 	def initializeState(self):
 
 		# Maximum number of retries for API calls
-		self.max_api_request=8
+		#self.max_api_request=8
 
 		# Log the duration of the processing
 		self.startTime = datetime.datetime.now().replace(microsecond=0)
@@ -227,22 +231,16 @@ class Orchestrator(object):
 		# Grab tier specific workload information from DynamoDB
                 self.lookupTierSpecs(self.partitionTargetValue)
 
+	@retriable(attempts=5, sleeptime=0, jitter=0)
 	def lookupELBs(self):
-
-		success_describe_elbs_done = 0
-                describe_elb_api_retry_count = 1
-		while (success_describe_elbs_done == 0):
-			try:
-				self.all_elbs = self.elb.describe_load_balancers()
-				msg = 'Orchestrator::__init() Found attached ELBs-->'
-				success_describe_elbs_done = 1
-			except Exception as e:
-				self.all_elbs = "0"
-				msg = 'Orchestrator:: Exception obtaining all ELBs in region %s --> %s' % (self.workloadRegion,e)
-				subject_prefix = "Scheduler Exception in %s" % self.workloadRegion
-				logger.error(msg + str(e))
-				self.snsInit.exponentialBackoff(describe_elb_api_retry_count,msg,subject_prefix)
-				describe_elb_api_retry_count += 1
+		try:
+			self.all_elbs = self.elb.describe_load_balancers()
+			msg = 'Orchestrator::__init() Found attached ELBs-->'
+		except Exception as e:
+			msg = 'Orchestrator:: Exception obtaining all ELBs in region %s --> %s' % (self.workloadRegion,e)
+			subject_prefix = "Scheduler Exception in %s" % self.workloadRegion
+			logger.error(msg + str(e))
+			raise e
 
 	def lookupWorkloadSpecification(self, partitionTargetValue):
 		try:
@@ -453,6 +451,7 @@ class Orchestrator(object):
 
 		return( float(res) )
 	
+	@retriable(attempts=5,sleeptime=0, jitter=0)
 	def lookupInstancesByFilter(self, targetInstanceStateKey, tierName):
 	    # Use the filter() method of the instances collection to retrieve
 	    # all running EC2 instances.
@@ -491,22 +490,17 @@ class Orchestrator(object):
 		# Filter the instances
 		# NOTE: Only instances within the specified region are returned
 		targetInstanceColl = {}
-		instances_filter_done=0
-		filter_instances_api_retry_count=1
-		while (instances_filter_done==0):
-				try:	
-					targetInstanceColl = sorted(self.ec2R.instances.filter(Filters=targetFilter))
-					logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
-					if(logger.level==Orchestrator.LOG_LEVEL_DEBUG):
-						for curr in targetInstanceColl:
-							logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
-					instances_filter_done=1
-				except Exception as e:
-					msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->' % e
-					logger.error(msg + str(e))
-					subject_prefix = "Scheduler Exception in %s" % self.workloadRegion
-					self.snsInit.exponentialBackoff(filter_instances_api_retry_count,msg,subject_prefix)
-					filter_instances_api_retry_count += 1
+		try:
+			targetInstanceColl = sorted(self.ec2R.instances.filter(Filters=targetFilter))
+			logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
+			if(logger.level==Orchestrator.LOG_LEVEL_DEBUG):
+				for curr in targetInstanceColl:
+					logger.debug('lookupInstancesByFilter(): Found the following matching targets %s' % curr)
+		except Exception as e:
+			msg = 'Orchestrator::lookupInstancesByFilter() Exception encountered during instance filtering %s -->' % e
+			logger.error(msg + str(e))
+			raise e
+
 
 		return targetInstanceColl
 
@@ -539,7 +533,7 @@ class Orchestrator(object):
 		if( killSwitch ):
 			bodyMsg = '%s: Kill Switch Enabled.   All scheduling actions on the workload will be bypassed.' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE]
 			snsTopicSubjectLine = "Scheduler Kill Switch enabled"
-			self.snsInit.publishTopicMessage(snsTopicSubjectLine, bodyMsg)
+			self.snsInit.sendSns(snsTopicSubjectLine, bodyMsg)
 
 		else:
 
@@ -556,8 +550,13 @@ class Orchestrator(object):
 					self.stopATier(currTier)
 					
 
-			elif( action == Orchestrator.ACTION_START ): 
-				orchMain.lookupELBs()
+			elif( action == Orchestrator.ACTION_START ):
+
+				try:
+					orchMain.lookupELBs()
+				except Exception as e:
+					self.sns.sendSns("orchMain.lookupELBs() has encountered an exception ", str(e)) # See action function  https://github.com/mozilla-releng/redo
+
 	
 				# Sequence the tiers per the START order
 				self.sequenceTiers(Orchestrator.TIER_START)
@@ -598,11 +597,12 @@ class Orchestrator(object):
 		
 		# Find the running instances of this tier to stop
 		running=self.instanceStateMap[16]
+		try:
+			instancesToStopList = self.lookupInstancesByFilter(running,tierName)
+		except Exception as e:
+			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception", str(e))
 
-		instancesToStopList = self.lookupInstancesByFilter(
-			running,
-			tierName
-		)
+		
 
 		# Determine if operations on the Tier should be synchronized or not
 		tierSynchronized=self.isTierSynchronized(tierName, Orchestrator.TIER_STOP)
@@ -612,7 +612,7 @@ class Orchestrator(object):
 
 
 		for currInstance in instancesToStopList:
-			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.max_api_request,self.snsInit,self.ec2_client)
+			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.ec2_client, self.sns)
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
 				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME],
@@ -639,17 +639,19 @@ class Orchestrator(object):
 		stopped=self.instanceStateMap[80]
 
 		# Find the stopped instances of this tier to start
-		stoppedInstancesList = self.lookupInstancesByFilter(
-			stopped,
-			tierName
-		)
+		try:
+			stoppedInstancesList = self.lookupInstancesByFilter(stopped,tierName)
+		except Exception as e:
+			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e))
+
 
 		running=self.instanceStateMap[16]
+		try:
+			runningInstancesList = self.lookupInstancesByFilter(running,tierName)
+		except Exception as e:
+			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e))
 
-		runningInstancesList = self.lookupInstancesByFilter(
-			running,
-			tierName
-		)
+
 
 		totalInstancesList = stoppedInstancesList + runningInstancesList
 
@@ -682,7 +684,7 @@ class Orchestrator(object):
 		for currInstance in self.startList:
 			
 			logger.debug('Starting instance %s', currInstance)
-			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.dryRunFlag, self.max_api_request,self.snsInit,self.ec2_client)
+			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.all_elbs, self.elb,self.scaleInstanceDelay, self.dryRunFlag,self.ec2_client, self.sns)
 			# If a ScalingProfile was specified, change the instance type now, prior to Start
 			instanceTypeToLaunch = self.isScalingAction(self.tierName)
 			if( instanceTypeToLaunch ):
@@ -787,16 +789,12 @@ class Orchestrator(object):
 		logger.info('\n### Orchestrating STOP Action ###')
 		self.orchestrate(Orchestrator.ACTION_STOP )
 
-	def sns_init(self):
-		try:
-			sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
-			sns_workload = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
-			self.snsInit = RetryNotifier(self.workloadRegion,sns_workload,self.max_api_request)
-			self.snsInit.makeTopic(sns_topic_name)
-#		else:
-		except Exception as e: 
-			logger.info('Orchestrator::sns_init() sns_topic_name must be defined in DynamoDB --> ' + str(e))
-			exit()
+
+	def sns_Init(self):
+		sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
+		#sns_topic_name	= "tongetopic1"
+		sns_workload	= self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
+		self.sns	= SnsNotifier(sns_topic_name,sns_workload)
 
 if __name__ == "__main__":
 	# python Orchestrator.py -i workloadIdentier -r us-west-2
@@ -854,5 +852,5 @@ if __name__ == "__main__":
 
 		logger.info('\n### Orchestrating %s' % action +' Action ###')
 		orchMain.initializeState()
-		orchMain.sns_init()
+		orchMain.sns_Init()
 		orchMain.orchestrate(action)
