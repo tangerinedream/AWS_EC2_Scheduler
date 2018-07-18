@@ -5,8 +5,8 @@ import logging.handlers
 import time
 import watchtower
 import requests
-from  botocore.credentials import InstanceMetadataProvider, InstanceMetadataFetcher
-
+from botocore.credentials import InstanceMetadataProvider, InstanceMetadataFetcher
+from redo import retriable,retry
 
 logger = logging.getLogger('Orchestrator') #The Module Name
 auditlogger = logging.getLogger("audit_logger") #getLogger returns a reference to a logger instance with the specified name if it is provided
@@ -37,7 +37,7 @@ class InstanceMetaData(object):
          access_key = creds.access_key
          return(access_key)
 
-
+'''
 class RetryNotifier():
 	def __init__(self,dynamoDBRegion,sns_workload,max_api_request):
 		self.dynamoDBRegion=dynamoDBRegion
@@ -126,7 +126,7 @@ class RetryNotifier():
                 except Exception as e:
                         msg = 'exponentialBackoff failed with error %s -->'
                         logger.error(msg + str(e))
-
+'''
 
 
 def initLogging(loglevel,partitionTargetValue,LogStreamName):
@@ -172,10 +172,10 @@ def initLogging(loglevel,partitionTargetValue,LogStreamName):
 
 
 class SnsNotifier(object):
-
 	def __init__(self, topic,workload):
 		self.topic = topic
 		self.workload = workload
+	@retriable(attempts=5, sleeptime=0, jitter=0)
 	def sendSns(self,subject,message):
 		client =boto3.resource('sns')
 		topic = client.create_topic(Name=self.topic)

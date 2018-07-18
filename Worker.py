@@ -20,14 +20,14 @@ class Worker(object):
 	SNS_SUBJECT_PREFIX_WARNING = "Warning:"
 	SNS_SUBJECT_PREFIX_INFORMATIONAL = "Info:"
 
-	def __init__(self, workloadRegion, instance, snsInit, ec2_client, dryRunFlag, mysnsInit):
-
+	#def __init__(self, workloadRegion, instance, snsInit, ec2_client, dryRunFlag, snsInit):
+	def __init__(self, workloadRegion, instance, ec2_client, dryRunFlag, snsInit):
 		self.workloadRegion = workloadRegion
 		self.instance = instance
 		self.dryRunFlag = dryRunFlag
-		self.snsInit = snsInit
+		#self.snsInit = snsInit
 		self.ec2_client = ec2_client
-		self.mysnsInit = mysnsInit
+		self.snsInit = snsInit
 		self.instanceStateMap = {
 			"pending": 0,
 			"running": 16,
@@ -46,14 +46,17 @@ class Worker(object):
 
 class StartWorker(Worker):
 
-	def __init__(self, ddbRegion, workloadRegion, instance, all_elbs, elb, scalingInstanceDelay, dryRunFlag,max_api_request, snsInit, ec2_client, mysnsInit):
-		super(StartWorker, self).__init__(workloadRegion, instance, snsInit, ec2_client, dryRunFlag, mysnsInit)
+#	def __init__(self, ddbRegion, workloadRegion, instance, all_elbs, elb, scalingInstanceDelay, dryRunFlag,max_api_request, snsInit, ec2_client, snsInit):
+#		super(StartWorker, self).__init__(workloadRegion, instance, snsInit, ec2_client, dryRunFlag, snsInit)
+
+	def __init__(self, ddbRegion, workloadRegion, instance, all_elbs, elb, scalingInstanceDelay, dryRunFlag, ec2_client, snsInit):
+		super(StartWorker, self).__init__(workloadRegion, instance, ec2_client, dryRunFlag, snsInit)
 
 		self.ddbRegion = ddbRegion
 		self.all_elbs = all_elbs
 		self.elb = elb
 		self.scalingInstanceDelay = scalingInstanceDelay
-		self.max_api_request = max_api_request
+		#self.max_api_request = max_api_request
 
 	@retriable(attempts=5, sleeptime=0, jitter=0)
 	def addressELBRegistration(self):
@@ -93,9 +96,7 @@ class StartWorker(Worker):
 					try:
 						self.addressELBRegistration()
 					except Exception as e:
-						retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::addressELBRegistration() has encountered an exception", str(e)))  # See action function  https://github.com/mozilla-releng/redo
-						exit()
-
+						self.snsInit.sendSns("Worker::addressELBRegistration() has encountered an exception", str(e))  # See action function  https://github.com/mozilla-releng/redo
 
 					logger.debug('Starting EC2 instance: %s' % self.instance.id)
 					try:
@@ -105,8 +106,8 @@ class StartWorker(Worker):
 					except Exception as e:
 						msg = 'Worker::instance.start() Exception encountered during instance start ---> %s' % e
 						logger.error(msg)
-						retry(self.mysnsInit.sendSns, attempts=5, jitter=1, args=("Exception - EC2 instance start::Worker::instance.start() Exception encountered during instance start",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-						exit()
+						self.snsInit.sendSns("Exception - EC2 instance start::Worker::instance.start() Exception encountered during instance start",str(e))  # See action function  https://github.com/mozilla-releng/redo
+
 
 	def scaleInstance(self, modifiedInstanceType):
 
@@ -138,21 +139,21 @@ class StartWorker(Worker):
 				modifiedInstanceTypeValue = modifiedInstanceTypeList[0] + '.' + modifiedInstanceTypeList[1]
 				InstanceTypeKwargs = {"InstanceType":{'Value': modifiedInstanceTypeValue}}
 				try:
-					result = retry(self.instance.modify_attribute,attempts=5,jitter=1,sleeptime=0,kwargs=InstanceTypeKwargs)
+					result = retry(self.instance.modify_attribute,attempts=5,jitter=0,sleeptime=0,kwargs=InstanceTypeKwargs)
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().modifiedInstanceTypeValue Exception for EC2 instance %s , error --> %s ' % (self.instance, str(e))
 					logger.warning(msg)
-					retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
+
 
 				EbsOptimizeKwargs = {"EbsOptimized":{'Value': ebsOptimizedAttr}}
 				try:
-					result = retry(self.instance.modify_attribute,attempts=5,sleeptime=0,jitter=1,kwargs=EbsOptimizeKwargs)
+					result = retry(self.instance.modify_attribute,attempts=5,sleeptime=0,jitter=0,kwargs=EbsOptimizeKwargs)
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().ebsOptimizedAttr Exception for EC2 instance %s, error --> %s' % (self.instance, str(e))
 					logger.warning(msg)
-					retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
+
 
 
 				# It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
@@ -176,8 +177,8 @@ class StartWorker(Worker):
 				try:
 					self.checkT2Unlimited()
 				except Exception as e:
-					retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::describe_instance_credit_specifications() has encountered an exception" ,str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+					self.snsInit.sendSns("Worker::describe_instance_credit_specifications() has encountered an exception" ,str(e))  # See action function  https://github.com/mozilla-releng/redo
+
 
 				if self.current_t2_value == "standard":
 					try:
@@ -187,15 +188,13 @@ class StartWorker(Worker):
 					except Exception as e:
 						msg = 'Worker::instance.modify_attribute().t2Unlimited Exception for EC2 instance %s, error --> %s' % (self.instance, str(e))
 						logger.warning(msg)
-						retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::checkT2Unlimited::instance.modify_attribute().t2Unlimited has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-						exit()
+						self.snsInit.sendSns("Worker::checkT2Unlimited::instance.modify_attribute().t2Unlimited has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
 
 		else:
 			try:
 				self.checkT2Unlimited()
 			except Exception as e:
-				retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::checkT2Unlimited::describe_instance_credit_specifications() Exception has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-				exit()
+				self.snsInit.sendSns("Worker::checkT2Unlimited::describe_instance_credit_specifications() Exception has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
 
 			if self.current_t2_value == "unlimited":
 				logger.debug('t2Unlimited(): Current T2 value: %s' % self.current_t2_value)
@@ -209,8 +208,7 @@ class StartWorker(Worker):
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().t2standard Exception in progress for EC2 instance %s, error --> %s' % (self.instance, str(e))
 					logger.warning(msg)
-					retry(self.mysnsInit.sendSns, attempts=5, args=("Worker::instance.modify_attribute().t2standard Exception has encountered an exception",str(e)))  # See action function  https://github.com/mozilla-releng/redo
-					exit()
+					self.snsInit.sendSns("Worker::instance.modify_attribute().t2standard Exception has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
 
 	@retriable(attempts=5,sleeptime=0, jitter=0)
 	def checkT2Unlimited(self):
@@ -232,17 +230,19 @@ class StartWorker(Worker):
 
 
 class StopWorker(Worker):
-	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag, max_api_request, snsInit, ec2_client , mysnsInit):
-		super(StopWorker, self).__init__(workloadRegion, instance, snsInit, ec2_client, dryRunFlag, mysnsInit)
+#	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag, '''max_api_request, snsInit,''' ec2_client , snsInit):
+#		super(StopWorker, self).__init__(workloadRegion, instance, snsInit, ec2_client, dryRunFlag, snsInit)
 
+	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag, ec2_client, snsInit):
+		super(StopWorker, self).__init__(workloadRegion, instance, ec2_client, dryRunFlag, snsInit)
 		self.ddbRegion = ddbRegion
 
 		# MUST convert string False to boolean False
 		self.waitFlag = strtobool('False')
 		self.overrideFlag = strtobool('False')
-		self.max_api_request = max_api_request
+		#self.max_api_request = max_api_request
+		#self.snsInit = snsInit
 		self.snsInit = snsInit
-		self.mysnsInit = mysnsInit
 
 	def stopInstance(self):
 
@@ -381,10 +381,11 @@ class StopWorker(Worker):
 
 		if (self.overrideFlag == True):
 			if (warningMsg):
-				self.snsInit.publishTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
+				self.snsInit.sendSns(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
+				#self.snsInit.publishTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
 			else:
-				self.snsInit.publishTopicMessage(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, msg)
-
+				#self.snsInit.publishTopicMessage(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, msg)
+				self.snsInit.sendSns(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, warningMsg)
 		return (self.overrideFlag)
 
 	def setOverrideFlagSet(self, overrideFlag):
