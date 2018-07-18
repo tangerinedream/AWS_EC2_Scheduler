@@ -7,7 +7,7 @@ from SSMDelegate import SSMDelegate
 import botocore
 import Utils
 import logging
-from redo import retriable, retry
+from redo import retriable, retry #https://github.com/mozilla-releng/redo
 
 
 
@@ -20,12 +20,11 @@ class Worker(object):
 	SNS_SUBJECT_PREFIX_WARNING = "Warning:"
 	SNS_SUBJECT_PREFIX_INFORMATIONAL = "Info:"
 
-	#def __init__(self, workloadRegion, instance, snsInit, ec2_client, dryRunFlag, snsInit):
+
 	def __init__(self, workloadRegion, instance, ec2_client, dryRunFlag, snsInit):
 		self.workloadRegion = workloadRegion
 		self.instance = instance
 		self.dryRunFlag = dryRunFlag
-		#self.snsInit = snsInit
 		self.ec2_client = ec2_client
 		self.snsInit = snsInit
 		self.instanceStateMap = {
@@ -46,9 +45,6 @@ class Worker(object):
 
 class StartWorker(Worker):
 
-#	def __init__(self, ddbRegion, workloadRegion, instance, all_elbs, elb, scalingInstanceDelay, dryRunFlag,max_api_request, snsInit, ec2_client, snsInit):
-#		super(StartWorker, self).__init__(workloadRegion, instance, snsInit, ec2_client, dryRunFlag, snsInit)
-
 	def __init__(self, ddbRegion, workloadRegion, instance, all_elbs, elb, scalingInstanceDelay, dryRunFlag, ec2_client, snsInit):
 		super(StartWorker, self).__init__(workloadRegion, instance, ec2_client, dryRunFlag, snsInit)
 
@@ -56,7 +52,6 @@ class StartWorker(Worker):
 		self.all_elbs = all_elbs
 		self.elb = elb
 		self.scalingInstanceDelay = scalingInstanceDelay
-		#self.max_api_request = max_api_request
 
 	@retriable(attempts=5, sleeptime=0, jitter=0)
 	def addressELBRegistration(self):
@@ -96,7 +91,7 @@ class StartWorker(Worker):
 					try:
 						self.addressELBRegistration()
 					except Exception as e:
-						self.snsInit.sendSns("Worker::addressELBRegistration() has encountered an exception", str(e))  # See action function  https://github.com/mozilla-releng/redo
+						self.snsInit.sendSns("Worker::addressELBRegistration() has encountered an exception", str(e))
 
 					logger.debug('Starting EC2 instance: %s' % self.instance.id)
 					try:
@@ -106,7 +101,7 @@ class StartWorker(Worker):
 					except Exception as e:
 						msg = 'Worker::instance.start() Exception encountered during instance start ---> %s' % e
 						logger.error(msg)
-						self.snsInit.sendSns("Exception - EC2 instance start::Worker::instance.start() Exception encountered during instance start",str(e))  # See action function  https://github.com/mozilla-releng/redo
+						self.snsInit.sendSns("Exception - EC2 instance start::Worker::instance.start() Exception encountered during instance start",str(e))
 
 
 	def scaleInstance(self, modifiedInstanceType):
@@ -143,7 +138,7 @@ class StartWorker(Worker):
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().modifiedInstanceTypeValue Exception for EC2 instance %s , error --> %s ' % (self.instance, str(e))
 					logger.warning(msg)
-					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
+					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))
 
 
 				EbsOptimizeKwargs = {"EbsOptimized":{'Value': ebsOptimizedAttr}}
@@ -152,7 +147,7 @@ class StartWorker(Worker):
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().ebsOptimizedAttr Exception for EC2 instance %s, error --> %s' % (self.instance, str(e))
 					logger.warning(msg)
-					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
+					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))
 
 
 
@@ -177,24 +172,24 @@ class StartWorker(Worker):
 				try:
 					self.checkT2Unlimited()
 				except Exception as e:
-					self.snsInit.sendSns("Worker::describe_instance_credit_specifications() has encountered an exception" ,str(e))  # See action function  https://github.com/mozilla-releng/redo
+					self.snsInit.sendSns("Worker::describe_instance_credit_specifications() has encountered an exception" ,str(e))
 
 
 				if self.current_t2_value == "standard":
 					try:
 						logger.info('t2Unlimited(): Trying to modify EC2 instance credit specification')
-						result = retry(self.ec2_client.modify_instance_credit_specification,attempts=5, sleeptime=0,jitter=1,kwargs= {"InstanceCreditSpecifications":[{'InstanceId': self.instance.id,'CpuCredits': 'unlimited'}]} )
+						result = retry(self.ec2_client.modify_instance_credit_specification,attempts=5, sleeptime=0,jitter=0,kwargs= {"InstanceCreditSpecifications":[{'InstanceId': self.instance.id,'CpuCredits': 'unlimited'}]} )
 						logger.info('t2Unlimited(): EC2 instance credit specification modified')
 					except Exception as e:
 						msg = 'Worker::instance.modify_attribute().t2Unlimited Exception for EC2 instance %s, error --> %s' % (self.instance, str(e))
 						logger.warning(msg)
-						self.snsInit.sendSns("Worker::checkT2Unlimited::instance.modify_attribute().t2Unlimited has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
+						self.snsInit.sendSns("Worker::checkT2Unlimited::instance.modify_attribute().t2Unlimited has encountered an exception",str(e))
 
 		else:
 			try:
 				self.checkT2Unlimited()
 			except Exception as e:
-				self.snsInit.sendSns("Worker::checkT2Unlimited::describe_instance_credit_specifications() Exception has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
+				self.snsInit.sendSns("Worker::checkT2Unlimited::describe_instance_credit_specifications() Exception has encountered an exception",str(e))
 
 			if self.current_t2_value == "unlimited":
 				logger.debug('t2Unlimited(): Current T2 value: %s' % self.current_t2_value)
@@ -208,7 +203,7 @@ class StartWorker(Worker):
 				except Exception as e:
 					msg = 'Worker::instance.modify_attribute().t2standard Exception in progress for EC2 instance %s, error --> %s' % (self.instance, str(e))
 					logger.warning(msg)
-					self.snsInit.sendSns("Worker::instance.modify_attribute().t2standard Exception has encountered an exception",str(e))  # See action function  https://github.com/mozilla-releng/redo
+					self.snsInit.sendSns("Worker::instance.modify_attribute().t2standard Exception has encountered an exception",str(e))
 
 	@retriable(attempts=5,sleeptime=0, jitter=0)
 	def checkT2Unlimited(self):
@@ -230,8 +225,6 @@ class StartWorker(Worker):
 
 
 class StopWorker(Worker):
-#	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag, '''max_api_request, snsInit,''' ec2_client , snsInit):
-#		super(StopWorker, self).__init__(workloadRegion, instance, snsInit, ec2_client, dryRunFlag, snsInit)
 
 	def __init__(self, ddbRegion, workloadRegion, instance, dryRunFlag, ec2_client, snsInit):
 		super(StopWorker, self).__init__(workloadRegion, instance, ec2_client, dryRunFlag, snsInit)
@@ -240,8 +233,6 @@ class StopWorker(Worker):
 		# MUST convert string False to boolean False
 		self.waitFlag = strtobool('False')
 		self.overrideFlag = strtobool('False')
-		#self.max_api_request = max_api_request
-		#self.snsInit = snsInit
 		self.snsInit = snsInit
 
 	def stopInstance(self):
@@ -260,7 +251,7 @@ class StopWorker(Worker):
 			except Exception as e:
 				msg = 'Worker::instance.stop() Exception occured for EC2 instance %s, error --> %s' % (self.instance,  str(e))
 				logger.warning(msg)
-				retry(self.mysnsInit.sendSns, attempts=5, sleeptime=0, jitter=0, args=("Exception instance.stopInstance() Exception encountered during instance stop",str(e)))  # See action function  https://github.com/mozilla-releng/redo
+				self.snsInit.sendSns("Exception instance.stopInstance() Exception encountered during instance stop",str(e))
 
 
 		# If configured, wait for the stop to complete prior to returning
@@ -375,9 +366,7 @@ class StopWorker(Worker):
 		if (self.overrideFlag == True):
 			if (warningMsg):
 				self.snsInit.sendSns(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
-				#self.snsInit.publishTopicMessage(Worker.SNS_SUBJECT_PREFIX_WARNING, warningMsg)
 			else:
-				#self.snsInit.publishTopicMessage(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, msg)
 				self.snsInit.sendSns(Worker.SNS_SUBJECT_PREFIX_INFORMATIONAL, warningMsg)
 		return (self.overrideFlag)
 

@@ -16,7 +16,7 @@ from Worker import Worker, StopWorker, StartWorker
 from Utils import SnsNotifier
 from Utils import InstanceMetaData
 import getpass
-from redo import retriable,retry
+from redo import retriable,retry  # See action function  https://github.com/mozilla-releng/redo
 from sys import exit
 
 
@@ -533,7 +533,6 @@ class Orchestrator(object):
 		if( killSwitch ):
 			bodyMsg = '%s: Kill Switch Enabled.   All scheduling actions on the workload will be bypassed.' % self.workloadSpecificationDict[Orchestrator.WORKLOAD_ENVIRONMENT_FILTER_TAG_VALUE]
 			snsTopicSubjectLine = "Scheduler Kill Switch enabled"
-			#self.snsInit.publishTopicMessage(snsTopicSubjectLine, bodyMsg)
 			self.snsInit.sendSns(snsTopicSubjectLine, bodyMsg)
 
 		else:
@@ -601,7 +600,7 @@ class Orchestrator(object):
 		try:
 			instancesToStopList = self.lookupInstancesByFilter(running,tierName)
 		except Exception as e:
-			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e)) # See action function  https://github.com/mozilla-releng/redo
+			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception", str(e))
 
 		
 
@@ -613,7 +612,6 @@ class Orchestrator(object):
 
 
 		for currInstance in instancesToStopList:
-			#stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.max_api_request,self.snsInit,self.ec2_client, self.sns)
 			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.ec2_client, self.sns)
 			stopWorker.setWaitFlag(tierSynchronized)
 			stopWorker.execute(
@@ -644,14 +642,14 @@ class Orchestrator(object):
 		try:
 			stoppedInstancesList = self.lookupInstancesByFilter(stopped,tierName)
 		except Exception as e:
-			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e)) # See action function  https://github.com/mozilla-releng/redo
+			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e))
 
 
 		running=self.instanceStateMap[16]
 		try:
 			runningInstancesList = self.lookupInstancesByFilter(running,tierName)
 		except Exception as e:
-			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e)) # See action function  https://github.com/mozilla-releng/redo
+			self.sns.sendSns("Orchestrator::lookupInstancesByFilter() has encountered an exception",str(e))
 
 
 
@@ -686,7 +684,6 @@ class Orchestrator(object):
 		for currInstance in self.startList:
 			
 			logger.debug('Starting instance %s', currInstance)
-			#startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.all_elbs, self.elb, self.scaleInstanceDelay, self.dryRunFlag,self.max_api_request,self.snsInit,self.ec2_client,self.sns)
 			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.all_elbs, self.elb,self.scaleInstanceDelay, self.dryRunFlag,self.ec2_client, self.sns)
 			# If a ScalingProfile was specified, change the instance type now, prior to Start
 			instanceTypeToLaunch = self.isScalingAction(self.tierName)
@@ -793,22 +790,9 @@ class Orchestrator(object):
 		self.orchestrate(Orchestrator.ACTION_STOP )
 
 
-#	def sns_init(self):
-#		try:
-#			sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
-#			sns_workload = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
-#			self.snsInit = RetryNotifier(self.workloadRegion,sns_workload,self.max_api_request)
-#			self.snsInit.makeTopic(sns_topic_name)
-#		else:
-#		except Exception as e:
-#			logger.info('Orchestrator::sns_init() sns_topic_name must be defined in DynamoDB --> ' + str(e))
-#			exit()
-
-
-
 	def sns_Init(self):
-		#sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
-		sns_topic_name	= "tongetopic1"
+		sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
+		#sns_topic_name	= "tongetopic1"
 		sns_workload	= self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
 		self.sns	= SnsNotifier(sns_topic_name,sns_workload)
 
@@ -868,6 +852,5 @@ if __name__ == "__main__":
 
 		logger.info('\n### Orchestrating %s' % action +' Action ###')
 		orchMain.initializeState()
-		#orchMain.sns_init()
 		orchMain.sns_Init()
 		orchMain.orchestrate(action)
