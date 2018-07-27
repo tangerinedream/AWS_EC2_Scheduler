@@ -95,7 +95,7 @@ class StartWorker(Worker):
 
 					logger.debug('Starting EC2 instance: %s' % self.instance.id)
 					try:
-						result = self.instance.start()
+						result = retry(self.instance.start, attempts = 5, sleeptime=0, jitter=0)
 						logger.debug('Starting EC2 instance: %s' % self.instance.id)
 						logger.info('startInstance() for ' + self.instance.id + ' result is %s' % result)
 					except Exception as e:
@@ -296,7 +296,10 @@ class StopWorker(Worker):
 		# If there is no overrideFilename specified, we need to return False.  This is required because the
 		# remote evaluation script may evaluate to "Bypass" with a null string for the override file.  Keep in
 		# mind, DynamodDB isn't going to enforce an override filename be set in the directive.
-		if not overrideFileName:
+
+		noSSM = ""
+
+		if (S3BucketName == noSSM) or (S3KeyPrefixName == noSSM) or (not overrideFileName):
 			logger.info(
 				self.instance.id + ' Override Flag not set in specification.  Therefore this instance will be actioned. ')
 			return False

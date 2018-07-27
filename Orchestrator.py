@@ -614,9 +614,17 @@ class Orchestrator(object):
 		for currInstance in instancesToStopList:
 			stopWorker = StopWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.dryRunFlag,self.ec2_client, self.sns)
 			stopWorker.setWaitFlag(tierSynchronized)
+			
+			if all (k in self.workloadSpecificationDict for k in (Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME,Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME)):
+				ssmS3Bucket = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME],
+				ssmS3KeyPrefixName = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME],
+			else:
+				ssmS3Bucket = ""
+				ssmS3KeyPrefixName = ""
+
 			stopWorker.execute(
-				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_BUCKET_NAME],
-				self.workloadSpecificationDict[Orchestrator.WORKLOAD_SSM_S3_KEY_PREFIX_NAME],
+				ssmS3Bucket,
+				ssmS3KeyPrefixName,
 				self.getTierStopOverrideFilename(tierName),
 				self.getTierOperatingSystemType(tierName)
 			)
@@ -790,7 +798,7 @@ class Orchestrator(object):
 		self.orchestrate(Orchestrator.ACTION_STOP )
 
 
-	def sns_Init(self):
+	def snsInit(self):
 		sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
 		#sns_topic_name	= "tongetopic1"
 		sns_workload	= self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
@@ -852,5 +860,5 @@ if __name__ == "__main__":
 
 		logger.info('\n### Orchestrating %s' % action +' Action ###')
 		orchMain.initializeState()
-		orchMain.sns_Init()
+		orchMain.snsInit()
 		orchMain.orchestrate(action)
