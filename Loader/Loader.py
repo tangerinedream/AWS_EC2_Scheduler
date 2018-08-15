@@ -92,18 +92,17 @@ class Loader(object):
     if( Loader.WORKLOAD_TAG_NAME and Loader.WORKLOAD_TAG_VALUE and Loader.WORKLOAD_TIER_TAG_NAME in self.workloadBlock):
 
       for currTier in self.tiers:
-          if Loader.SPEC_NAME and Loader.TIER_TAG_VALUE and Loader.TIER_START and Loader.TIER_STOP in currTier:
-              if(self.isFleetSubsetStrings(currTier)):
-                continue
-              else:
-                return(False)
+          if Loader.SPEC_NAME and Loader.TIER_TAG_VALUE and Loader.TIER_START and Loader.TIER_STOP in currTier: 
+              if (Loader.TIER_SCALING in currTier):
+		  logger.info('TierScaling found for Tier name %s' % currTier)
+	          self.isFleetSubsetStrings(currTier)
           else:
-              logger.error('Tier name %s is missing one of the required attributes: %s, %s, %s, or %s ' % (
+              logger.error('Tier name %s is missing one of the required attributes: %s, %s, %s or %s ' % (
                  str(currTier),
                  Loader.SPEC_NAME,
                  Loader.TIER_TAG_VALUE,
                  Loader.TIER_START,
-                 Loader.TIER_STOP,
+                 Loader.TIER_STOP
               ))
               return(False)
 
