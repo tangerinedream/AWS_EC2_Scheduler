@@ -683,22 +683,25 @@ class Orchestrator(object):
 		self.targetInstanceCount = targetInstanceCount
 		self.runningInstancesList = runningInstancesList
 		self.stoppedInstancesList = stoppedInstancesList
+		self.allInstances = runningInstancesList + stoppedInstancesList
 		self.tierName = tierName
 
 		self.alreadyRunning = len(runningInstancesList)
 		self.toStart = int(self.targetInstanceCount) - len(self.runningInstancesList)
 		self.startList = self.stoppedInstancesList[:self.toStart]
 
-		for currInstance in self.startList:
-			
-			logger.debug('Starting instance %s', currInstance)
+		# Start and change required instances 
+		# If instanceTypeToLaunch is present, it means Profile is specified
+		
+		instanceTypeToLaunch = self.isScalingAction(self.tierName)
+		for currInstance in self.allInstances:
 			startWorker = StartWorker(self.dynamoDBRegion, self.workloadRegion, currInstance, self.all_elbs, self.elb,self.scaleInstanceDelay, self.dryRunFlag,self.ec2_client, self.sns)
-			# If a ScalingProfile was specified, change the instance type now, prior to Start
-			instanceTypeToLaunch = self.isScalingAction(self.tierName)
-			if( instanceTypeToLaunch ):
+			if (instanceTypeToLaunch):
 				startWorker.scaleInstance(instanceTypeToLaunch)
-		# Finally, have the worker Start the instance
-			startWorker.start()
+				logger.info('Changed all EC2 instance types to %s in Tier %s' % (instanceTypeToLaunch,self.tierName))
+			if currInstance in self.startList:
+				logger.debug('Starting instance %s', currInstance)
+				startWorker.start()
 
 		# Delay to be introduced prior to allowing the next tier to be actioned.
 		# It may make sense to allow some amount of time for the instances to Stop, prior to Orchestration continuing.
