@@ -20,6 +20,10 @@ All of the primary, real world scenarios you might wish to entertain will be sup
 You have a need to manage multiple Workloads across various AWS Regions.  This is supported out of the box.
 ![Scheduler_MultiWorkloads.png](https://s3.amazonaws.com/gman-aws-ec2-scheduler/github-diagrams/Scheduler_MultiWorkloads.png)
 
+
+#### MultiAccount support
+In case there is a need for controlling resources in different account from the account where actual Scheduler is running in, the following entries should be added to DynamoDB Workloads table: CrossAccountRole and CrossAccountRoleExternalId. It will allow Scheduler to Assume a Role and perform actions in remote account. Both DynamoDB entries are required for this feature. More details about Assuming roles can be found [here]|(https://docs.aws.amazon.com/IAM/latest/UserGuide/tutorial_cross-account-with-roles.html)
+
 #### Orderly Workload Lifecycle Execution
 Stopping and Starting instances in an orderly manner may involve starting and stopping Tiers in a particular order, after all, you may not want to start your Web tier without having started your App Server tier or DB tier for that matter, so sequencing may be important for non-trivial workloads.  When starting a Tier, you may want to wait for one Tier to complete some initialization prior to sequencing to the next Tier in the dependency chain.  So, inter-tier orchestration may be important to you.
 
@@ -405,6 +409,8 @@ The workload specification contains tier independent configuration of the worklo
 |**SSMS3BucketName**|The path of the S3BucketName|No. Used only with SSM/Instance Exemption|
 |**ScaleInstanceDelay**|Specifies the sleep delay in seconds between the instance resize (Scaling Action) and instance Start.  This delay is necessary to address the eventual consistency issue seen on the AWS side when resizing and immediately Starting an instance.|No|
 |**DisableAllSchedulingActions**|When this attribute is present in the Workload Table and has a string value of '1', <b>no</b> processing will occur across the entire workload.  This attribute is a <b>global override</b> and results in no actions being taken. Any value other than a string of '1', will be ignored and processing will continue as if the attribute was not even present.|No|
+|**CrossAccountRole**|ARN of the remote account.|No|
+|**CrossAccountRoleExternalId**|External ID of the remote account.|No|
 
 #### JSON: WorkloadSpecification Example
 The below JSON is an example of a row in the WorkloadSpecification DynamoDB table.  Not all attributes are required.

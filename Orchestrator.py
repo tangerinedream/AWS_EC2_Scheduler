@@ -54,6 +54,9 @@ class Orchestrator(object):
 	TIER_SPEC_TABLE_NAME='TierSpecification'
 	TIER_SPEC_PARTITION_KEY='SpecName'
 
+	WORKLOAD_CROSS_ACCOUNT_ROLE='CrossAccountRole'
+	ASSUME_ROLE_EXTERNAL_ID='CrossAccountRoleExternalId'
+
 	# Mapping of Python Class Variables to DynamoDB Attribute Names in Tier Table
 	TIER_FILTER_TAG_KEY='TierFilterTagName'
 	TIER_FILTER_TAG_VALUE='TierTagValue'
@@ -120,7 +123,10 @@ class Orchestrator(object):
 			Orchestrator.WORKLOAD_KILL_SWITCH,
 			Orchestrator.WORKLOAD_SCALE_INSTANCE_DELAY,
 			Orchestrator.TIER_FILTER_TAG_KEY,
-			Orchestrator.FLEET_SUBSET
+			Orchestrator.FLEET_SUBSET,
+			Orchestrator.WORKLOAD_CROSS_ACCOUNT_ROLE,
+		        Orchestrator.ASSUME_ROLE_EXTERNAL_ID
+
 		]
 
 		# Tier-specific DynamoDB Table Related
@@ -208,26 +214,39 @@ class Orchestrator(object):
 			except Exception as e:
 				logger.warning('Couldn\'t convert %s to float. Using default of %s.  Exception was %s' % (delayValueStr, str(self.scaleInstanceDelay), str(e)) )
 
-		# We provision the boto3 resource here because we need to have determined the Workload Region as a dependency,
-		# which is done just above in this method
+		
+		# If CrossAccountRole OR CrossAccountRoleExternalId exist in DynamoDB then assume roles, otherwise use standard EC2/ELB clients:
+
 		try:
-			self.ec2R = boto3.resource('ec2', region_name=self.workloadRegion)
+			if ("CrossAccountRole" in self.workloadSpecificationDict):
+				sts_client = boto3.client('sts')
+				stsRoleArn = self.workloadSpecificationDict[Orchestrator.WORKLOAD_CROSS_ACCOUNT_ROLE]
+
+		# As we are not enforcing ExternalID, check if it's specified and if not assign it some string
+				roleExternalId = "externalID"
+
+				if ("CrossAccountRoleExternalId" in self.workloadSpecificationDict):
+					roleExternalId = self.workloadSpecificationDict[Orchestrator.ASSUME_ROLE_EXTERNAL_ID]
+
+	                        ec2_assume_role = sts_client.assume_role(RoleArn=stsRoleArn,RoleSessionName="sts_assume_role",ExternalId=roleExternalId)
+				sts_aws_access_key_id = ec2_assume_role['Credentials']['AccessKeyId']
+				sts_aws_secret_access_key = ec2_assume_role['Credentials']['SecretAccessKey']
+				sts_aws_session_token = ec2_assume_role['Credentials']['SessionToken']
+
+				self.ec2R = boto3.resource('ec2', region_name=self.workloadRegion,aws_access_key_id=sts_aws_access_key_id,aws_secret_access_key=sts_aws_secret_access_key,aws_session_token=sts_aws_session_token)
+				self.ec2_client = boto3.client('ec2',region_name=self.workloadRegion,aws_access_key_id=sts_aws_access_key_id,aws_secret_access_key=sts_aws_secret_access_key,aws_session_token=sts_aws_session_token)
+				self.elb = boto3.client('elb', region_name=self.workloadRegion,aws_access_key_id=sts_aws_access_key_id,aws_secret_access_key=sts_aws_secret_access_key,aws_session_token=sts_aws_session_token)
+
+			else:
+				self.ec2R = boto3.resource('ec2', region_name=self.workloadRegion)
+				self.ec2_client = boto3.client('ec2',region_name=self.workloadRegion)
+				self.elb = boto3.client('elb', region_name=self.workloadRegion)
+
 		except Exception as e:
-			msg = 'Orchestrator::initializeState() Exception obtaining botot3 ec2 resource in region %s -->' % self.workloadRegion
-			logger.error(msg + str(e))
+				msg = 'Orchestrator::__init__() Exception obtaining client in region %s -->' % self.workloadRegion
+				logger.error(msg + str(e))	
 
-		try:
-			self.elb = boto3.client('elb', region_name=self.workloadRegion)
-		except Exception as e:
-			msg = 'Orchestrator::__init__() Exception obtaining botot3 elb client in region %s -->' % self.workloadRegion
-			logger.error(msg + str(e))
-
-		try:
-			self.ec2_client = boto3.client('ec2',region_name=self.workloadRegion)
-	 	except Exception as e:
-			msg = 'Orchestrator::__init__() Exception obtaining boto3 ec2 client in region %s -->' % self.workloadRegion
-			logger.error(msg + str(e))
-
+					
 		# Grab tier specific workload information from DynamoDB
                 self.lookupTierSpecs(self.partitionTargetValue)
 
