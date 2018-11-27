@@ -140,7 +140,13 @@ class StartWorker(Worker):
 					logger.warning(msg)
 					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))
 
-
+				try:
+					result = retry(self.compareInstanceTypeValues, attempts = 5, sleeptime=3, jitter=0,args=(modifiedInstanceType,))
+				except Exception as e:
+					msg = 'Worker::compareInstanceTypeValues() Exception for instance %s , error --> currentInstanceTypeValue does not match modifiedInstanceTypeValue' % (self.instance)
+					logger.warning(msg)
+					self.snsInit.sendSns("Worker::compareInstanceTypeValues() has encountered an exception",str(e))
+										
 				EbsOptimizeKwargs = {"EbsOptimized":{'Value': ebsOptimizedAttr}}
 				try:
 					result = retry(self.instance.modify_attribute,attempts=5,sleeptime=0,jitter=0,kwargs=EbsOptimizeKwargs)
@@ -148,8 +154,6 @@ class StartWorker(Worker):
 					msg = 'Worker::instance.modify_attribute().ebsOptimizedAttr Exception for EC2 instance %s, error --> %s' % (self.instance, str(e))
 					logger.warning(msg)
 					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))
-
-
 
 				# It appears the start instance reads 'modify_attribute' changes as eventually consistent in AWS (assume DynamoDB),
 				#    this can cause an issue on instance type change, whereby the LaunchPlan generates an exception.
@@ -160,6 +164,16 @@ class StartWorker(Worker):
 		else:
 			logMsg = 'scaleInstance() requested to change instance type for non-stopped instance ' + self.instance.id + ' no action taken'
 			logger.warning(logMsg)
+
+
+	def compareInstanceTypeValues(self, modifiedInstanceTypeValue):
+		currentInstanceTypeValue = self.ec2_client.describe_instance_attribute(InstanceId=self.instance.id, Attribute='instanceType')['InstanceType'].values()
+		logger.info('compareInstanceTypeValues() - Comparing Instance Type Values of %s' % (self.instance.id))
+		logger.info('compareInstanceTypeValues() -   modifiedInstanceTypeValue : %s ' % (modifiedInstanceTypeValue))
+		logger.info('compareInstanceTypeValues() -    currentInstanceTypeValue : %s ' % (currentInstanceTypeValue))
+		if(currentInstanceTypeValue[0] not in modifiedInstanceTypeValue):
+			raise ValueError("Current instance type value does not match modified instance type value.")
+		
 
 	def t2Unlimited(self, modifiedInstanceList):
 
