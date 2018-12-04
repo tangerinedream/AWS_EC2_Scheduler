@@ -101,6 +101,29 @@ Resources:
         - Key : "AWS_EC2_Scheduler"
           Value : "Tier Definition"
 
+  SchedulerDynamoDBWorkloadStateTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: WorkloadState
+      AttributeDefinitions:
+        - AttributeName: LastActionType
+          AttributeType: S
+        - AttributeName: Workload
+          AttributeType: S
+        - AttributeName: LastActionTime
+          AttributeType: S
+        - AttributeName: Profile
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Workload
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      Tags:
+        - Key : "AWS_EC2_Scheduler"
+          Value : "Capturing Workload State"
+
   SchedulerIAMPolicy:
     Type: "AWS::IAM::ManagedPolicy"
     Properties:
@@ -192,3 +215,4 @@ Resources:
           }
         ]
       }
+

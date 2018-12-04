@@ -510,7 +510,33 @@ Or, for Windows guest OS ...
 }
 ```
 
-  
+ ### WorkloadState
+|Table Name|Partition Key|
+|----------|-------------|
+|WorkloadState|Workload|
+
+WorkloadState keeps track of states (Workload name, if any Profile is used, action type and last action time)
+
+
+#### WorkloadSpecification Table Attributes
+|**WorkloadState**|Description|Required?|
+|:------------------------|:-------|:--------------|
+|**Workload**|The Workload name.  In the example DynamoDB Table, "ENV001" is the tag value.|Yes|
+|**LastActionTime**|When was the Scheduler last used for this workload. Format is Python datetime.datetime.now() function. In the example DynamoDB Table, it is "2018-11-29 10:15:08"|Yes|
+|**LastActionType**|Last action performed by Scheduler. Can be either Stop or Start|Yes|
+|**Profile**|Profile used on this Workload. Please note that if Stop is used together with Profile (-p), this field won't be updated. Also, if no Profile (-p) is used, this field won't be updated|Yes|
+
+#### JSON: WorkloadSpecification Example
+The below JSON is an example of a row in the WorkloadState DynamoDB table.  Not all attributes are required.
+```json
+{
+  "Workload": "ENV001",
+  "LastActionTime": "2018-11-29 10:15:08",
+  "LastActionType": "Stop",
+  "Profile": "Indexation"
+}
+```
+ 
 
 ### IAM Policy
 The Enhanced IAM Policy is a superset of the Common IAM Policy and is provisioned for you, using the provided CloudFormation template in the *provisioning/cloudFormation* folder. 

@@ -32,6 +32,8 @@ class Orchestrator(object):
 	# Mapping of Python Class Variables to DynamoDB Attribute Names in Workload Table
 	WORKLOAD_SPEC_TABLE_NAME='WorkloadSpecification'
 	WORKLOAD_SPEC_PARTITION_KEY='SpecName'
+   
+        WORKLOAD_STATE_TABLE_NAME='WorkloadState'
 
 	WORKLOAD_SPEC_REGION_KEY='WorkloadRegion'
 
@@ -133,10 +135,13 @@ class Orchestrator(object):
 		self.tierSpecTableName=Orchestrator.TIER_SPEC_TABLE_NAME
 		self.tierSpecPartitionKey=Orchestrator.TIER_SPEC_PARTITION_KEY # Same as workloadSpecificationPartitionKey
 
+		self.workLoadState=Orchestrator.WORKLOAD_STATE_TABLE_NAME
+
 		# Table requires the DynamoDB.Resource
 		try:
 			self.dynDBR = boto3.resource('dynamodb', region_name=self.dynamoDBRegion)
 			self.tierSpecTable = self.dynDBR.Table(self.tierSpecTableName)
+			self.WorkloadStateTable = self.dynDBR.Table(self.workLoadState)
 		except Exception as e:
 			msg = 'Orchestrator::__init__() Exception obtaining botot3 dynamodb resource in region %s -->' % self.workloadRegion
 			logger.error(msg + str(e))
@@ -567,25 +572,42 @@ class Orchestrator(object):
 				
 					# Stop the next tier in the sequence
 					self.stopATier(currTier)
-					
+	
+				# Update DDB WorkloadState only if DryRun is False:
+				if (self.dryRunFlag == False):
+					self.updateWorkloadStateTable(action)				
 
 			elif( action == Orchestrator.ACTION_START ):
 
-				try:
-					orchMain.lookupELBs()
-				except Exception as e:
-					self.sns.sendSns("orchMain.lookupELBs() has encountered an exception ", str(e)) # See action function  https://github.com/mozilla-releng/redo
+
+				# Check if Env is already started
+				envStatus = orchMain.readWorkloadStateTable()
+				
+				if (envStatus == Orchestrator.ACTION_START):
+		
+					logger.info('Orchestrate() Workload already started, not performing Start action: ' + self.partitionTargetValue)		
+
+				else:
+					
+					try:
+						orchMain.lookupELBs()
+					except Exception as e:
+						self.sns.sendSns("orchMain.lookupELBs() has encountered an exception ", str(e)) # See action function  https://github.com/mozilla-releng/redo
 
 	
-				# Sequence the tiers per the START order
-				self.sequenceTiers(Orchestrator.TIER_START)
+					# Sequence the tiers per the START order
+					self.sequenceTiers(Orchestrator.TIER_START)
 				
-				for currTier in self.sequencedTiersList:
+					for currTier in self.sequencedTiersList:
 				
-					logger.info('Orchestrate() Starting Tier: ' + currTier)
+						logger.info('Orchestrate() Starting Tier: ' + currTier)
 				
-					# Start the next tier in the sequence
-					self.startATier(currTier)
+						# Start the next tier in the sequence
+						self.startATier(currTier)
+
+					# Update DDB WorkloadState only if DryRun is False
+					if (self.dryRunFlag == False):	
+						self.updateWorkloadStateTable(action)
 
 			elif( action not in self.validActionNames ):
 				
@@ -825,6 +847,50 @@ class Orchestrator(object):
 		#sns_topic_name	= "tongetopic1"
 		sns_workload	= self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
 		self.sns	= SnsNotifier(sns_topic_name,sns_workload)
+
+	@retriable(attempts=5, sleeptime=0, jitter=0)
+	def readWorkloadStateTable(self):
+		try:
+			dynamodbWorkloadState = self.WorkloadStateTable.query(
+				KeyConditionExpression=Key('Workload').eq(self.partitionTargetValue),
+				ConsistentRead=False,
+				ReturnConsumedCapacity="TOTAL",
+			)
+		except ClientError as e:
+			logger.error('Exception encountered in readWorkloadStateTable() -->' + str(e))
+
+		return dynamodbWorkloadState['Items'][0]['LastActionType']
+
+	def updateWorkloadStateTable(self,action):
+
+		self.currentTime = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+		if (action == Orchestrator.ACTION_START) and (self.scalingProfile is not None):
+			UpdateExpressionAttr='SET Profile= :profile, LastActionTime= :currentTime, LastActionType= :actionType'
+			ExpressionAttributeValuesAttr={
+					':profile': self.scalingProfile,
+					':currentTime': self.currentTime,
+					':actionType': action
+    					}
+
+		else:
+			UpdateExpressionAttr='SET LastActionTime= :currentTime, LastActionType= :actionType'
+			ExpressionAttributeValuesAttr={
+					':currentTime': self.currentTime,
+					':actionType': action,
+    					}
+	
+		try:
+			retry(self.WorkloadStateTable.update_item, attempts=5, sleeptime=0,jitter=0, kwargs= {
+    				"Key":{
+				        'Workload': self.partitionTargetValue,
+				    },
+				    "UpdateExpression":UpdateExpressionAttr,
+				    "ExpressionAttributeValues":ExpressionAttributeValuesAttr
+				})
+		except Exception as e:
+			msg = 'Orchestrator::updateWorkloadStateTable() Exception encountered during DDB update %s -->' % e
+	                logger.error(msg + str(e))	
 
 if __name__ == "__main__":
 	# python Orchestrator.py -i workloadIdentier -r us-west-2
