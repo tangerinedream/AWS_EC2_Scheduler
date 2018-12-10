@@ -206,7 +206,7 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 							# If the string says Continue, then it's a go.  Otherwise, we won't stop it.
 							if( scriptRes == SSMDelegate.SCRIPT_STOP_INSTANCE ):
 								result = SSMDelegate.DECISION_STOP_INSTANCE
-                                                        elif( scriptRes == SSMDelegate.DECISION_S3_RESULTFILE_NOT_LOCATED ):
+							elif( scriptRes == SSMDelegate.DECISION_S3_RESULTFILE_NOT_LOCATED ):
 								result = SSMDelegate.DECISION_S3_RESULTFILE_NOT_LOCATED 
 						else:
 							# Wasn't Success, so let's output what it was
@@ -368,7 +368,7 @@ and instance is running with Instance Profile (see documentation).  Exception wa
 					Bucket=self.S3BucketName,
 					Key=key
 				)
-                        else:
+			else:
                                 result = ""
                                 content = SSMDelegate.DECISION_S3_RESULTFILE_NOT_LOCATED
 
