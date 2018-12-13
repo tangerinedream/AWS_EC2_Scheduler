@@ -280,11 +280,11 @@ class StopWorker(Worker):
 			else:
 				try:
 					# Need the Client to get the Waiter
-					ec2Client = self.ec2Resource.meta.client
-					waiter = ec2Client.get_waiter('instance_stopped')
-
-					# Waits for 40 15 second increments (e.g. up to 10 minutes)
-					waiter.wait()
+					ec2_waiter = self.ec2_client.get_waiter('instance_stopped')
+					ec2_waiter.wait(InstanceIds=[self.instance.id], WaiterConfig={
+              'Delay': 10,
+              'MaxAttempts': 12
+          })
 
 				except Exception as e:
 					logger.warning('Worker:: waiter block encountered an exception of -->' + str(e))
