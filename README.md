@@ -165,22 +165,22 @@ The AWS_EC2_Scheduler is specifically architected for deployment flexibility, to
 1. *PaaS* Invocation via Lambda with Scheduling Actions or Step Functions
 
 If running the product on an instance, please address the following dependencies
-1. Ensure both python 2.7.x and boto3 are installed.
+1. Ensure both python 3.x and boto3 are installed.
     ~~~~
-    sudo apt-get install python-pip
-    pip install boto3
+    sudo apt-get install python3-pip
+    pip3 install boto3
     ~~~~
 1. Edit crontab to trigger Orchestrator.py
     ~~~~
     # Everyday @ 8pm Stop Workload ExampleTestCase
-    0 20 * * * python Orchestrator.py -w ExampleTestCase -r us-west-2 -a Stop
+    0 20 * * * python3 Orchestrator.py -w ExampleTestCase -r us-west-2 -a Stop
     # Everyday @ 8am Start Workload ExampleTestCase
-    0 8 * * * python Orchestrator.py -w ExampleTestCase -r us-west-2 -a Start
+    0 8 * * * python3 Orchestrator.py -w ExampleTestCase -r us-west-2 -a Start
     ~~~~
     
     
 If running via Lambda Scheduling Actions:
-1. python and boto3 are preinstalled,
+1. python3 and boto3 are preinstalled,
 1. Ensure Lambda is deployed with an IAM Role that permits Lambda to invoke the required AWS Services (e.g. SNS, DynamoDB). 
 **Note**: If you ran the CloudFormation script in [Stand Up the AWS_EC2_Scheduler Infrastructure](#stand-up-the-aws_ec2_scheduler-infrastructure), an IAM Policy was created for you.  Simply define your IAM Role and attach that Policy to the Role.
 
@@ -196,7 +196,7 @@ Contents:
 Below are the usage flags for launching the Orchestrator from the command line:
 ```
 
-$ python Orchestrator.py -h
+$ python3 Orchestrator.py -h
 usage: Orchestrator.py [-h] -w WORKLOADIDENTIFIER -r DYNAMODBREGION
                        [-a {Stop,Start}] [-t] [-d] [-p SCALINGPROFILE]
                        [-l {critical,error,warning,info,debug,notset}]
@@ -222,20 +222,20 @@ optional arguments:
 ```
 #### Examples:
 ##### Stop the workload named BotoTestCase1 in region us-west-2
-`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Stop`
+`$ python3 Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Stop`
 
 ##### Start the workload named BotoTestCase1 in region us-west-2
-`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Start`
+`$ python3 Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Start`
 
 ##### Execute a Dry Run, for Stopping the workload named BotoTestCase1 in region us-west-2
 No **Action** will be taken. For example, the Stop will *not* execute as the Dry Run flag is set
-`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Stop -d`
+`$ python3 Orchestrator.py -w BotoTestCase1 -r us-west-2 -a Stop -d`
 
 ##### Run the Test Suite - Starts and Stops instances with 90 second delay in-between.  Note: this will start and stop instances.
-`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -t`
+`$ python3 Orchestrator.py -w BotoTestCase1 -r us-west-2 -t`
 
 ##### Start the workload named BotoTestCase1 in region us-west-2 resizing tier members (instances) per named profile _performant_. Tiers without this profile name are not resized but are started
-`$ python Orchestrator.py -w BotoTestCase1 -r us-west-2 -p performant -a Start`
+`$ python3 Orchestrator.py -w BotoTestCase1 -r us-west-2 -p performant -a Start`
 
 
 

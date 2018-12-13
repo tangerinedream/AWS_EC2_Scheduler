@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 import boto3
 import time
 from botocore.exceptions import ClientError
@@ -167,7 +167,7 @@ class StartWorker(Worker):
 
 
 	def compareInstanceTypeValues(self, modifiedInstanceTypeValue):
-		currentInstanceTypeValue = self.ec2_client.describe_instance_attribute(InstanceId=self.instance.id, Attribute='instanceType')['InstanceType'].values()
+		currentInstanceTypeValue = list(self.ec2_client.describe_instance_attribute(InstanceId=self.instance.id, Attribute='instanceType')['InstanceType'].values())
 		logger.info('compareInstanceTypeValues() - Comparing Instance Type Values of %s' % (self.instance.id))
 		logger.info('compareInstanceTypeValues() -   modifiedInstanceTypeValue : %s ' % (modifiedInstanceTypeValue))
 		logger.info('compareInstanceTypeValues() -    currentInstanceTypeValue : %s ' % (currentInstanceTypeValue))

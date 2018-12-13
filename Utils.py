@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import boto3
 import logging
 import logging.handlers
@@ -56,7 +56,7 @@ def initLogging(loglevel,partitionTargetValue,LogStreamName):
                 loggingLevelSelected=logging.NOTSET
 
         filenameVal='Orchestrator_' + partitionTargetValue + '.log' 
-	log_formatter = logging.Formatter('[%(asctime)s][P:%(process)d][%(levelname)s][%(module)s:%(funcName)s()][%(lineno)d]%(message)s')
+        log_formatter = logging.Formatter('[%(asctime)s][P:%(process)d][%(levelname)s][%(module)s:%(funcName)s()][%(lineno)d]%(message)s')
 
         # Add the rotating file handler
         handler = logging.handlers.RotatingFileHandler(

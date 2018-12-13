@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 import boto3
 import json
 import time
@@ -32,8 +32,8 @@ class Orchestrator(object):
 	# Mapping of Python Class Variables to DynamoDB Attribute Names in Workload Table
 	WORKLOAD_SPEC_TABLE_NAME='WorkloadSpecification'
 	WORKLOAD_SPEC_PARTITION_KEY='SpecName'
-   
-        WORKLOAD_STATE_TABLE_NAME='WorkloadState'
+
+	WORKLOAD_STATE_TABLE_NAME='WorkloadState'
 
 	WORKLOAD_SPEC_REGION_KEY='WorkloadRegion'
 
@@ -233,7 +233,7 @@ class Orchestrator(object):
 				if ("CrossAccountRoleExternalId" in self.workloadSpecificationDict):
 					roleExternalId = self.workloadSpecificationDict[Orchestrator.ASSUME_ROLE_EXTERNAL_ID]
 
-	                        ec2_assume_role = sts_client.assume_role(RoleArn=stsRoleArn,RoleSessionName="sts_assume_role",ExternalId=roleExternalId)
+				ec2_assume_role = sts_client.assume_role(RoleArn=stsRoleArn,RoleSessionName="sts_assume_role",ExternalId=roleExternalId)
 				sts_aws_access_key_id = ec2_assume_role['Credentials']['AccessKeyId']
 				sts_aws_secret_access_key = ec2_assume_role['Credentials']['SecretAccessKey']
 				sts_aws_session_token = ec2_assume_role['Credentials']['SessionToken']
@@ -253,7 +253,7 @@ class Orchestrator(object):
 
 					
 		# Grab tier specific workload information from DynamoDB
-                self.lookupTierSpecs(self.partitionTargetValue)
+		self.lookupTierSpecs(self.partitionTargetValue)
 
 	@retriable(attempts=5, sleeptime=0, jitter=0)
 	def lookupELBs(self):
@@ -286,7 +286,7 @@ class Orchestrator(object):
 			for attributeName in resultItem:
 				# Validate the attributes entered into DynamoDB are valid.  If not, spit out individual warning messages
 				if( attributeName in self.workloadSpecificationValidAttributeList ):
-					attributeValue=resultItem[attributeName].values()[0]
+					attributeValue=list(resultItem[attributeName].values())[0]
 					logger.info('Workload Attribute [%s maps to %s]' % (attributeName, attributeValue))
 					self.workloadSpecificationDict[attributeName]=attributeValue
 				else:
@@ -294,7 +294,7 @@ class Orchestrator(object):
 
 
 	def recursiveFindKeys(self, sourceDict, resList):
-		for k,v in sourceDict.iteritems():
+		for k,v in sourceDict.items():
 			resList.append(k)
 			if( isinstance(v, dict) ):
 				# Since scalingProfile key names are user dependent, we can't validate them
@@ -355,10 +355,10 @@ class Orchestrator(object):
 		# for the given Action.  Sequence is ascending.
 		#
 		# Prefill list for easy insertion
-		self.sequencedTiersList=range( len(self.tierSpecDict) )
+		self.sequencedTiersList=list(range( len(self.tierSpecDict)))
 
 		# tierAction indicates whether it is a TIER_STOP, or TIER_START, as they may have different sequences
-		for currKey, currAttributes in self.tierSpecDict.iteritems():
+		for currKey, currAttributes in self.tierSpecDict.items():
 			logger.debug('sequenceTiers() Action=%s, currKey=%s, currAttributes=%s)' % (tierAction, currKey, currAttributes) )
 			
 			# Grab the Tier Name first
@@ -388,7 +388,7 @@ class Orchestrator(object):
 	def logSpecDict(self, label, dict, level):
 		# for key, value in self.workloadSpecificationDict.iteritems():
 		# 	logger.debug('%s (key==%s, value==%s)' % (label, key, value))
-		for key, value in dict.iteritems():
+		for key, value in dict.items():
 			if( level == Orchestrator.LOG_LEVEL_INFO ):
 				logger.info('%s (key==%s, value==%s)' % (label, key, value))
 			else:
@@ -515,7 +515,7 @@ class Orchestrator(object):
 		# NOTE: Only instances within the specified region are returned
 		targetInstanceColl = {}
 		try:
-			targetInstanceColl = sorted(self.ec2R.instances.filter(Filters=targetFilter))
+			targetInstanceColl = sorted(self.ec2R.instances.filter(Filters=targetFilter),key=id)
 			logger.info('lookupInstancesByFilter(): # of instances found for tier %s in state %s is %i' % (tierName, targetInstanceStateKey, len(list(targetInstanceColl))))
 			if(logger.level==Orchestrator.LOG_LEVEL_DEBUG):
 				for curr in targetInstanceColl:
@@ -890,7 +890,7 @@ class Orchestrator(object):
 				})
 		except Exception as e:
 			msg = 'Orchestrator::updateWorkloadStateTable() Exception encountered during DDB update %s -->' % e
-	                logger.error(msg + str(e))	
+			logger.error(msg + str(e))	
 
 if __name__ == "__main__":
 	# python Orchestrator.py -i workloadIdentier -r us-west-2
@@ -903,15 +903,16 @@ if __name__ == "__main__":
 	parser.add_argument('-d','--dryrun', action='count', help='Run but take no Action', required=False)
 	parser.add_argument('-p','--scalingProfile', help='Resize instances based on Scaling Profile name', required=False)
 	parser.add_argument('-l','--loglevel', choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to record log messages to the logfile', required=False)
-	
-	args = parser.parse_args()
 
-	if( args.loglevel > 0 ):
+# This is happening because in Python3 it can't compare NoneType and Int, so I've changed it to check if it's NoneType	
+	args = parser.parse_args()
+	
+	if( args.loglevel is not None ):
 		loglevel = args.loglevel
 	else:
 		loglevel = 'info'
 
-	if( args.dryrun > 0 ):
+	if( args.dryrun is not None ):
 		dryRun = True
 	else:
 		dryRun = False
@@ -927,7 +928,7 @@ if __name__ == "__main__":
 		LogStreamName = InstanceMetaData().getInstanceEnvTag(InstanceID)
 		NameTag = InstanceMetaData().getInstanceNameTag(InstanceID)
 		Creds = InstanceMetaData().getCredentials()
-	except Exception, e:
+	except Exception as e:
 		MetaDataError = str(e)
 	Utils.initLogging(args.loglevel,args.workloadIdentifier,LogStreamName)
 
@@ -936,7 +937,7 @@ if __name__ == "__main__":
 	auditlogger.info({'UserName': getpass.getuser(), 'Profile': args.scalingProfile or '', 'Workload': args.workloadIdentifier,'Action': args.action, 'Hostname': NameTag,'AccessKey': Creds,'EnvironmentName': LogStreamName,}) #Logs this Dict to Audit stream in CW
 	orchMain = Orchestrator(args.workloadIdentifier, args.dynamoDBRegion, args.scalingProfile, dryRun)
 	# If testcases set, run them, otherwise run the supplied Action only
-	if( args.testcases > 0 ):	
+	if( args.testcases is not None ):	
 		orchMain.runTestCases()
 	else:
 
