@@ -1,0 +1,85 @@
+workloads:
+  table: WorkloadSpecification
+  workload:
+    SpecName: SampleWorkload-01
+    WorkloadRegion: us-west-2
+    SNSTopicName: SchedulerSNSTopic
+    # SSMS3BucketName: <insert bucket name if 'Instance Exemption' (AWS SSM) feature desired>
+    # SSMS3KeyPrefixName: ssmRemoteCommandResults
+    # VPC_ID: vpc-xxxxxxxx
+    WorkloadFilterTagName: Environment
+    WorkloadFilterTagValue: ENV001
+    TierFilterTagName: ApplicationRole
+    ScaleInstanceDelay: '5'
+ 
+tiers:
+  table: TierSpecification
+  tiers:
+
+    - TierTagValue: Role_Web
+      SpecName: SampleWorkload-01
+      TierStart:
+        TierSequence: 2
+        TierSynchronization: 'False'
+        InterTierOrchestrationDelay: 15
+      TierStop:
+        TierSequence: 0
+        TierSynchronization: 'False'
+        InterTierOrchestrationDelay: 15
+      TierScaling:
+        DevMode: 
+          InstanceType: t2.nano
+          FleetSubset: '1'
+        HATestMode:
+          InstanceType: t2.nano
+          FleetSubset: '2'
+        PerfTestMode:
+          InstanceType: t3.medium
+          FleetSubset: 100%
+        ProdMode:
+          InstanceType: t3.medium
+          FleetSubset: 100%
+
+    - TierTagValue: Role_App
+      SpecName: SampleWorkload-01
+      TierStart:
+        TierSequence: 1
+        TierSynchronization: 'False'
+        InterTierOrchestrationDelay: 15
+      TierStop:
+        TierSequence: 1
+        TierSynchronization: 'False'
+        InterTierOrchestrationDelay: 15
+      TierScaling:
+        DevMode: 
+          InstanceType: t2.nano
+          FleetSubset: '1'
+        HATestMode:
+          InstanceType: t2.nano
+          FleetSubset: '2'
+        PerfTestMode:
+          InstanceType: t3.medium
+          FleetSubset: 100%
+        ProdMode:
+          InstanceType: t3.large
+          FleetSubset: 100%
+
+    - TierTagValue: Role_DB
+      SpecName: SampleWorkload-01
+      TierStart:
+        TierSequence: 0
+        TierSynchronization: 'False'
+        InterTierOrchestrationDelay: 15
+      TierStop:
+        TierSequence: 2
+        TierSynchronization: 'False'
+        InterTierOrchestrationDelay: 15
+      TierScaling:
+        DevMode: 
+          InstanceType: t2.nano
+        HATestMode:
+          InstanceType: t2.nano
+        PerfTestMode:
+          InstanceType: t3.large
+        ProdMode:
+          InstanceType: m5.large

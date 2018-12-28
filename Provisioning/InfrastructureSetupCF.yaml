@@ -37,32 +37,6 @@ Resources:
           Key : "AWS_EC2_Scheduler"
           Value : "Bucket for SSM Temp Files"
 
-
-  SchedulerSNSTopic:
-    Type: "AWS::SNS::Topic"
-    Properties:
-      DisplayName: Scheduler
-      TopicName: SchedulerSNSTopic
-
-  SchedulerS3Bucket:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName:
-        Ref: BucketNameParam
-      LifecycleConfiguration:
-        Rules:
-          -
-            ExpirationInDays: 1
-            Status: Enabled
-            TagFilters:
-              -
-                Key : "AWS_EC2_Scheduler"
-                Value : "Lifecycle Rule for Bucket of SSM Temp Files"
-      Tags:
-        -
-          Key : "AWS_EC2_Scheduler"
-          Value : "Bucket for SSM Temp Files"
-
   SchedulerDynamoDBWorkloadTable:
     Type: "AWS::DynamoDB::Table"
     Properties:
@@ -106,13 +80,7 @@ Resources:
     Properties:
       TableName: WorkloadState
       AttributeDefinitions:
-        - AttributeName: LastActionType
-          AttributeType: S
         - AttributeName: Workload
-          AttributeType: S
-        - AttributeName: LastActionTime
-          AttributeType: S
-        - AttributeName: Profile
           AttributeType: S
       KeySchema:
         - AttributeName: Workload
@@ -189,11 +157,13 @@ Resources:
               "Effect": "Allow",
               "Action": [
                   "dynamodb:GetItem",
+                  "dynamodb:PutItem",
                   "dynamodb:Query"
               ],
               "Resource": [
                 { "Fn::GetAtt" : [ "SchedulerDynamoDBWorkloadTable", "Arn" ] },
-                { "Fn::GetAtt" : [ "SchedulerDynamoDBTierTable", "Arn" ] }
+                { "Fn::GetAtt" : [ "SchedulerDynamoDBTierTable", "Arn" ] },
+                { "Fn::GetAtt" : [ "SchedulerDynamoDBWorkloadStateTable", "Arn" ] }
               ]
           },
           {

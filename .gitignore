@@ -1,2 +1,9 @@
 *.pyc
 *.log*
+*.idea
+*.xlsx
+notes
+bin*
+lib*
+pip-selfcheck.json
+pyvenv.cfg
