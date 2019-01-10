@@ -84,7 +84,7 @@ class Orchestrator(object):
 	LOG_LEVEL_INFO='info'
 	LOG_LEVEL_DEBUG='debug'
 
-	def __init__(self, partitionTargetValue, dynamoDBRegion, scalingProfile, dryRun=False):
+	def __init__(self, partitionTargetValue, dynamoDBRegion, scalingProfile, overrideState, dryRun=False):
 
 
 		# default to us-west-2
@@ -163,6 +163,8 @@ class Orchestrator(object):
 		]
 
 		self.scalingProfile = scalingProfile
+
+		self.overrideState = overrideState
 
 		#
 		###
@@ -579,34 +581,33 @@ class Orchestrator(object):
 
 			elif( action == Orchestrator.ACTION_START ):
 
-
-				# Check if Env is already started
-				envStatus = orchMain.readWorkloadStateTable()
-				
-				if (envStatus == Orchestrator.ACTION_START):
-		
-					logger.info('Orchestrate() Workload already started, not performing Start action: ' + self.partitionTargetValue)		
-
+				doStartFlag = True
+				if (self.overrideState):
+					logger.info('Orchestrate() Override -o flag detected, not checking WorkloadState DynamoDB table')
 				else:
-					
+					# Check State TableCheck if Env is already started
+					envStatus = orchMain.readWorkloadStateTable()
+
+					# If started, no reason to try to start it again
+					if (envStatus == Orchestrator.ACTION_START):
+						logger.info(
+							'Orchestrate() Workload marked as Started in DynamoDB, not performing Start action. Please use -o flag to override this if required. Workload: ' + self.partitionTargetValue)
+						doStartFlag = False
+
+				if(doStartFlag):
+					# Start the workload
 					try:
 						orchMain.lookupELBs()
 					except Exception as e:
 						self.sns.sendSns("orchMain.lookupELBs() has encountered an exception ", str(e)) # See action function  https://github.com/mozilla-releng/redo
-
-	
 					# Sequence the tiers per the START order
 					self.sequenceTiers(Orchestrator.TIER_START)
-				
 					for currTier in self.sequencedTiersList:
-				
 						logger.info('Orchestrate() Starting Tier: ' + currTier)
-				
 						# Start the next tier in the sequence
 						self.startATier(currTier)
-
 					# Update DDB WorkloadState only if DryRun is False
-					if (self.dryRunFlag == False):	
+					if (self.dryRunFlag == False):
 						self.updateWorkloadStateTable(action)
 
 			elif( action not in self.validActionNames ):
@@ -919,6 +920,7 @@ if __name__ == "__main__":
 	parser.add_argument('-d','--dryrun', action='count', help='Run but take no Action', required=False)
 	parser.add_argument('-p','--scalingProfile', help='Resize instances based on Scaling Profile name', required=False)
 	parser.add_argument('-l','--loglevel', choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to record log messages to the logfile', required=False)
+	parser.add_argument('-o','--overrideState', action='count',help='Override WorkloadState table', required=False)
 
 # This is happening because in Python3 it can't compare NoneType and Int, so I've changed it to check if it's NoneType	
 	args = parser.parse_args()
@@ -933,8 +935,13 @@ if __name__ == "__main__":
 	else:
 		dryRun = False
 
-	# Launch the Orchestrator - the main component of the subsystem
 
+	if( args.overrideState is not None ):
+		overrideState = True
+	else:
+		overrideState = False
+
+	# Launch the Orchestrator - the main component of the subsystem
 	LogStreamName = "NonEC2Instance"
 	NameTag = ""
 	Creds = ""
@@ -951,7 +958,7 @@ if __name__ == "__main__":
 	if MetaDataError:
 		logger.error(MetaDataError)
 	auditlogger.info({'UserName': getpass.getuser(), 'Profile': args.scalingProfile or '', 'Workload': args.workloadIdentifier,'Action': args.action, 'Hostname': NameTag,'AccessKey': Creds,'EnvironmentName': LogStreamName,}) #Logs this Dict to Audit stream in CW
-	orchMain = Orchestrator(args.workloadIdentifier, args.dynamoDBRegion, args.scalingProfile, dryRun)
+	orchMain = Orchestrator(args.workloadIdentifier, args.dynamoDBRegion, args.scalingProfile, overrideState, dryRun)
 	# If testcases set, run them, otherwise run the supplied Action only
 	if( args.testcases is not None ):	
 		orchMain.runTestCases()
