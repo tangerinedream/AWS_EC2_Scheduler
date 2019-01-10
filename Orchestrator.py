@@ -844,12 +844,28 @@ class Orchestrator(object):
 
 	def snsInit(self):
 		sns_topic_name = self.workloadSpecificationDict[Orchestrator.WORKLOAD_SNS_TOPIC_NAME]
-		#sns_topic_name	= "tongetopic1"
 		sns_workload	= self.workloadSpecificationDict[Orchestrator.WORKLOAD_SPEC_PARTITION_KEY]
 		self.sns	= SnsNotifier(sns_topic_name,sns_workload)
 
 	@retriable(attempts=5, sleeptime=0, jitter=0)
 	def readWorkloadStateTable(self):
+		self.currentTime = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+	# ConditionExpression will make that item is put into DDB only if attribute Workload doesn't exist
+		try:
+				response = self.WorkloadStateTable.put_item(
+				Item={
+				'Workload': self.partitionTargetValue,
+				'LastActionTime': str(self.currentTime),
+				'LastActionType': 'Unmanaged',
+				},
+				ConditionExpression = "attribute_not_exists(Workload)")   
+				logger.info("Updated WorkloadState DynamoDB")
+		except Exception as e:
+			if e.response['Error']['Code'] != 'ConditionalCheckFailedException':
+				msg = 'Orchestrator::readWorkloadStateTable() Exception encountered during DDB put_item %s -->' % e 
+				logger.error(msg + str(e))
+				raise e
+
 		try:
 			dynamodbWorkloadState = self.WorkloadStateTable.query(
 				KeyConditionExpression=Key('Workload').eq(self.partitionTargetValue),
@@ -857,8 +873,8 @@ class Orchestrator(object):
 				ReturnConsumedCapacity="TOTAL",
 			)
 		except ClientError as e:
-			logger.error('Exception encountered in readWorkloadStateTable() -->' + str(e))
-
+			logger.error('Exception encountered in readWorkloadStateTable() for query -->' + str(e))
+					
 		return dynamodbWorkloadState['Items'][0]['LastActionType']
 
 	def updateWorkloadStateTable(self,action):

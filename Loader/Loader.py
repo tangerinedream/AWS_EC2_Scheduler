@@ -4,11 +4,11 @@ import logging
 import yaml
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
+import datetime
 
 logger = logging.getLogger('Loader') #The Module Name
 
 class Loader(object):
-
   WORKLOAD_PARTITION_KEY = 'SpecName'
   WORKLOAD_TAG_NAME='WorkloadFilterTagName' 
   WORKLOAD_TAG_VALUE='WorkloadFilterTagValue'
@@ -22,13 +22,16 @@ class Loader(object):
   TIER_STOP = 'TierStop'
   #TIER_ORCHESTRATION_DELAY = 'InterTierOrchestrationDelay'
   FLEET_SUBSET = 'FleetSubset'
+  WORKLOADSTATE = 'WorkloadState'
+  WORKLOADSPECTYPE = 'Unmanaged'
 
   # ----------------------------------------------------------------------------
   def __init__(self, dynamoDBRegion, logLevel):
 
     self.initLogging(logLevel) 
     self.dynDb = boto3.resource('dynamodb', region_name=dynamoDBRegion)
-
+    self.currentTime = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    self.workloadSpecType = Loader.WORKLOADSPECTYPE
 
   #=======================================================================================================================================
   # Yaml Processing
@@ -223,6 +226,24 @@ class Loader(object):
     self.loadWorkload()
     self.loadTiers()
 
+  def workLoadState(self):
+
+    try:
+	self.WorkloadStateTable = self.dynDb.Table(self.WORKLOADSTATE)
+    	response = self.WorkloadStateTable.put_item(
+              Item={
+              'Workload': self.workloadSpecName,
+              'LastActionTime': str(self.currentTime),
+	      'LastActionType': self.workloadSpecType
+             },
+             ConditionExpression = "attribute_not_exists(Workload)")   
+	logger.info("Updated WorkloadState DynamoDB")
+    except Exception as e:
+        if e.response['Error']['Code'] != 'ConditionalCheckFailedException':
+            msg = 'Orchestrator::readWorkloadStateTable() Exception encountered during DDB put_item %s -->' % e
+            logger.error(msg + str(e))
+            raise e
+
   def initLogging(self, loglevel):
      # Set logging level
      loggingLevelSelected = logging.INFO
@@ -275,5 +296,6 @@ if __name__ == "__main__":
     else:
         logger.error('Yaml config file did not pass validation, exiting')
         quit(-1)
+    loader.workLoadState()
 
     logger.info("***Done***")
