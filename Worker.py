@@ -7,6 +7,7 @@ from SSMDelegate import SSMDelegate
 import botocore
 import Utils
 import logging
+import yaml
 from redo import retriable, retry #https://github.com/mozilla-releng/redo
 
 
@@ -141,11 +142,14 @@ class StartWorker(Worker):
 					self.snsInit.sendSns("Worker::instance.modify_attribute().modifiedInstanceTypeValue has encountered an exception",str(e))
 
 				try:
-					result = retry(self.compareInstanceTypeValues, attempts = 5, sleeptime=3, jitter=0,args=(modifiedInstanceType,))
+					result = retry(self.compareInstanceTypeValues, attempts = 8, sleeptime=15, jitter=0,args=(modifiedInstanceType,))
 				except Exception as e:
-					msg = 'Worker::compareInstanceTypeValues() Exception for instance %s , error --> currentInstanceTypeValue does not match modifiedInstanceTypeValue' % (self.instance)
+					msg = 'Worker::compareInstanceTypeValues() Exception for instance %s, error --> currentInstanceTypeValue does not match modifiedInstanceTypeValue' % (self.instance.id)
 					logger.warning(msg)
-					self.snsInit.sendSns("Worker::compareInstanceTypeValues() has encountered an exception",str(e))
+					tagsYaml = self.retrieveTags()
+					snsSubject = 'Worker::compareInstanceTypeValues() has encountered an exception for instance %s' % (self.instance.id)
+					snsMessage = '%s\n%s' % (str(e), str(tagsYaml))
+					self.snsInit.sendSns(snsSubject, snsMessage)
 										
 				EbsOptimizeKwargs = {"EbsOptimized":{'Value': ebsOptimizedAttr}}
 				try:
@@ -173,7 +177,17 @@ class StartWorker(Worker):
 		logger.info('compareInstanceTypeValues() -    currentInstanceTypeValue : %s ' % (currentInstanceTypeValue))
 		if(currentInstanceTypeValue[0] not in modifiedInstanceTypeValue):
 			raise ValueError("Current instance type value does not match modified instance type value.")
-		
+
+
+	def retrieveTags(self):
+		##Return EC2 Tags of given instance in YAML format.
+		tags = self.ec2_client.describe_instances(InstanceIds=[self.instance.id])['Reservations'][0]['Instances'][0]['Tags']
+		tagsYaml = yaml.safe_dump(tags, explicit_start=True, default_flow_style=False)
+		logger.info('retrieveTags(): Retrieve and return instance EC2 tags in YAML format.')
+		logger.debug('retrieveTags(): EC2 tag details for %s' % self.instance.id)
+		logger.debug('retrieveTags(): %s' % tagsYaml)
+		return tagsYaml
+
 
 	def t2Unlimited(self, modifiedInstanceList):
 
