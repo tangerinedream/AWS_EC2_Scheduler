@@ -524,7 +524,7 @@ WorkloadState keeps track of states (Workload name, if any Profile is used, acti
 |**Workload**|The Workload name.  In the example DynamoDB Table, "ENV001" is the tag value.|Yes|
 |**LastActionTime**|When was the Scheduler last used for this workload. Format is Python datetime.datetime.now() function. In the example DynamoDB Table, it is "2018-11-29 10:15:08"|Yes|
 |**LastActionType**|Last action performed by Scheduler. Can be either Stop or Start|Yes|
-|**Profile**|Profile used on this Workload. Please note that if Stop is used together with Profile (-p), this field won't be updated. Also, if no Profile (-p) is used, this field won't be updated|Yes|
+|**Profile**|Profile used on this Workload. Please note that if Stop is used together with Profile (-p), this field won't be updated. Also, if no Profile (-p) is used, this field won't be updated|No|
 
 #### JSON: WorkloadSpecification Example
 The below JSON is an example of a row in the WorkloadState DynamoDB table.  Not all attributes are required.

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import os.path
 import logging
@@ -55,7 +56,7 @@ class Loader(object):
       logger.error("File must exist and be named with .yaml  Exiting")
       quit(-1)
 
-    stream = file(yamlFile, 'r')
+    stream = open(yamlFile, 'r')
     yaml_doc = yaml.load(stream)
 
 
@@ -70,9 +71,9 @@ class Loader(object):
 
   def isFleetSubsetStrings(self, tierBlock):
     tierScalingClause =  tierBlock[Loader.TIER_SCALING]
-    for currProfileName, currProfileAttrs in tierScalingClause.iteritems():
+    for currProfileName, currProfileAttrs in tierScalingClause.items():
       if(Loader.FLEET_SUBSET in currProfileAttrs) :
-        if(isinstance(currProfileAttrs[Loader.FLEET_SUBSET], basestring)):
+        if(isinstance(currProfileAttrs[Loader.FLEET_SUBSET], str)):
           continue
         else:
           logger.error(
@@ -97,8 +98,8 @@ class Loader(object):
       for currTier in self.tiers:
           if Loader.SPEC_NAME and Loader.TIER_TAG_VALUE and Loader.TIER_START and Loader.TIER_STOP in currTier: 
               if (Loader.TIER_SCALING in currTier):
-		  logger.info('TierScaling found for Tier name %s' % currTier)
-	          self.isFleetSubsetStrings(currTier)
+                  logger.info('TierScaling found for Tier name %s' % currTier)
+                  self.isFleetSubsetStrings(currTier)
           else:
               logger.error('Tier name %s is missing one of the required attributes: %s, %s, %s or %s ' % (
                  str(currTier),
@@ -229,15 +230,15 @@ class Loader(object):
   def workLoadState(self):
 
     try:
-	self.WorkloadStateTable = self.dynDb.Table(self.WORKLOADSTATE)
-    	response = self.WorkloadStateTable.put_item(
+        self.WorkloadStateTable = self.dynDb.Table(self.WORKLOADSTATE)
+        response = self.WorkloadStateTable.put_item(
               Item={
               'Workload': self.workloadSpecName,
               'LastActionTime': str(self.currentTime),
-	      'LastActionType': self.workloadSpecType
+              'LastActionType': self.workloadSpecType
              },
              ConditionExpression = "attribute_not_exists(Workload)")   
-	logger.info("Updated WorkloadState DynamoDB")
+        logger.info("Updated WorkloadState DynamoDB")
     except Exception as e:
         if e.response['Error']['Code'] != 'ConditionalCheckFailedException':
             msg = 'Orchestrator::readWorkloadStateTable() Exception encountered during DDB put_item %s -->' % e
@@ -279,7 +280,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if( args.logLevel > 0 ):
+    if( args.logLevel is not None):
       logLevel = args.logLevel
     else:
       logLevel = 'info'
