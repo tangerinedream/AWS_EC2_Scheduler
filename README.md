@@ -511,33 +511,34 @@ Or, for Windows guest OS ...
 ```
 Or, example with FleetSubset where profileE will launch 20% of instances and profileF will launch exactly 4 instances...
 ```json
-{ "SpecName": "BotoTestCase1", 
+{ 
+  "SpecName": "BotoTestCase1", 
   "TierStart": { 
     "TierSequence": "2", 
     "TierSynchronization": "False" 
   }, 
   "TierStop": { 
-  "TierSequence": "0", 
-  "TierStopOverrideFilename": "/tmp/StopOverride", 
-  "TierStopOverrideOperatingSystem": "Linux", 
-  "TierSynchronization": "False", 
-  "InterTierOrchestrationDelay": "10" 
-}, 
-  "TierScaling": { 
-  "default": "t2.nano", 
-  "profileB": "t2.medium", 
-  "profileC": "t2.large", 
-  "profileD": "c4.large", 
-  "profileE": { 
-    "InstanceType": "t2.large", 
-    "FleetSubset" : 20%" 
+    "TierSequence": "0", 
+    "TierStopOverrideFilename": "/tmp/StopOverride", 
+    "TierStopOverrideOperatingSystem": "Linux", 
+    "TierSynchronization": "False", 
+    "InterTierOrchestrationDelay": "10" 
   }, 
-  "profileF": { 
-    "InstanceType": "t2.large", 
-    "FleetSubset" : 4" 
-}, 
-}, 
-"TierTagValue": "Role_Web" 
+  "TierScaling": { 
+    "default": "t2.nano", 
+    "profileB": "t2.medium", 
+    "profileC": "t2.large", 
+    "profileD": "c4.large", 
+    "profileE": { 
+      "InstanceType": "t2.large", 
+      "FleetSubset" : 20%" 
+    }, 
+    "profileF": { 
+      "InstanceType": "t2.large", 
+      "FleetSubset" : 4" 
+    }, 
+  }, 
+  "TierTagValue": "Role_Web" 
 } 
 ```
  ### WorkloadState
