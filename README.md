@@ -509,7 +509,37 @@ Or, for Windows guest OS ...
   "TierTagValue": "Role_Web"
 }
 ```
-
+Or, example with FleetSubset where profileE will launch 20% of instances and profileF will launch exactly 4 instances...
+```json
+{ "SpecName": "BotoTestCase1", 
+  "TierStart": { 
+    "TierSequence": "2", 
+    "TierSynchronization": "False" 
+  }, 
+  "TierStop": { 
+  "TierSequence": "0", 
+  "TierStopOverrideFilename": "/tmp/StopOverride", 
+  "TierStopOverrideOperatingSystem": "Linux", 
+  "TierSynchronization": "False", 
+  "InterTierOrchestrationDelay": "10" 
+}, 
+  "TierScaling": { 
+  "default": "t2.nano", 
+  "profileB": "t2.medium", 
+  "profileC": "t2.large", 
+  "profileD": "c4.large", 
+  "profileE": { 
+    "InstanceType": "t2.large", 
+    "FleetSubset" : 20%" 
+  }, 
+  "profileF": { 
+    "InstanceType": "t2.large", 
+    "FleetSubset" : 4" 
+}, 
+}, 
+"TierTagValue": "Role_Web" 
+} 
+```
  ### WorkloadState
 |Table Name|Partition Key|
 |----------|-------------|
@@ -670,6 +700,34 @@ Enable this policy on the instance or Lambda function running the Orchestrator.p
     ]
 }
 ``` 
+#### IAM Policy if CrossAccountRole
+If CrossAccountRole and CrossAccountRoleExternalId are enabled, the following IAM Policy needs to be added and attached to IAM role in target AWS account:
+
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "elasticloadbalancing:DescribeLoadBalancers",
+                "ec2:DescribeInstances",
+                "ec2:StartInstances",
+                "ec2:ModifyInstanceCreditSpecification",
+                "ec2:DescribeTags",
+                "ec2:ModifyInstanceAttribute",
+                "ec2:StopInstances",
+                "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                "ec2:DescribeInstanceCreditSpecifications",
+                "ec2:DescribeInstanceStatus"
+            ],
+            "Resource": "*"
+        }
+]
+}
+```
 #### Enhanced Policy for the Workload instances
 Additionally, when using SSM you will need to enable an IAM Policy on the instances in your Workload.  In the case of Windows based instances, SSM is already installed.  For Linux, you'll need to deploy the SSM agent and provide the below policy to allow that instance to interact with the AWS SSM service.
 
