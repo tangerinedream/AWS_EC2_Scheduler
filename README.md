@@ -702,7 +702,7 @@ Enable this policy on the instance or Lambda function running the Orchestrator.p
 }
 ``` 
 #### IAM Policy if CrossAccountRole
-If CrossAccountRole and CrossAccountRoleExternalId are enabled, the following IAM Policy needs to be added and attached to IAM role in target AWS account:
+If CrossAccountRole and CrossAccountRoleExternalId are enabled, the following IAM Policy needs to be added and attached to IAM role **in the target AWS account**:
 
 ```
 {
