@@ -6,6 +6,7 @@ import yaml
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
 import datetime
+import re
 
 logger = logging.getLogger('Loader') #The Module Name
 
@@ -33,12 +34,58 @@ class Loader(object):
     self.dynDb = boto3.resource('dynamodb', region_name=dynamoDBRegion)
     self.currentTime = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     self.workloadSpecType = Loader.WORKLOADSPECTYPE
+  #=======================================================================================================================================
+  # DDB Unload, YAML file deletion and copy workload
+  #---------------------------------------------------------------------------------------------------------------------------------------
+  def copy_workload(self):
+      # determine older environment name from source_specname filename passed
+      # determine new environment name to replace old environment name with from file passed.
 
+      sourceWorkloadName = os.path.split(args.sourceWorkloadPath)
+      newWorkloadName = os.path.split(args.newWorkloadPath)
+
+      logger.info("sourceWorkloadName {}\n".format(sourceWorkloadName[1]))
+      logger.info("newWorkloadName {}\n".format(newWorkloadName[1]))
+
+      source = re.search("(?<=Quest-)([A-Z]{2}\d{2})", sourceWorkloadName[1])
+      orig_env = source.group(0)
+      dest = re.search("(?<=Quest-)([A-Z]{2}\d{2})", newWorkloadName[1])
+      new_env = dest.group(0)
+
+
+      # open file for reading
+      try:
+          with open(args.sourceWorkloadPath, 'r+') as readfile:
+              filedata = readfile.read()  # loads file into memory and find older environment name and replace with new name
+              updatedfile = filedata.replace(orig_env, new_env)  # write out updated file to new_filename
+
+      except Exception as e:
+          print(e)
+      # open file for writing
+      try:
+          with open(args.newWorkloadPath, 'w') as writefile:
+              writefile.write(updatedfile)
+              print ("replaced {} with {} in {} ".format(orig_env, new_env, args.newWorkloadPath))
+      except Exception as e:
+          print(e)
+
+  def unload_workload(self):  #unloads the workload form 3 tables and removes from filesystem.
+      unLoadFile = args.unloadFilePath.strip()
+      self.deleteWorkloads()
+      self.deleteTiers()
+      self.deleteWorkLoadState()
+      print ("Unloaded Workload {}".format(unLoadFile))
+      logger.info("Unloaded Workload {}".format(unLoadFile))
+      if os.path.isfile(unLoadFile):
+          os.remove(unLoadFile)
+          print ("Deleted File from {} ".format(unLoadFile))
+      else:
+          print(unLoadFile, 'File does not exist')
   #=======================================================================================================================================
   # Yaml Processing
   #---------------------------------------------------------------------------------------------------------------------------------------
   def isValidYamlFilename(self, fileName):
-    logger.info("Yaml File name: " + fileName)
+    logger.info("Yaml File name: {}\n".format(fileName) )
     if os.path.exists(fileName) == False:
       logger.error("Yaml File %s doesn't exist, exiting." % fileName)
       return(False)
@@ -177,7 +224,7 @@ class Loader(object):
   #---------------------------------------------------------------------------------------------------------------------------------------
   def deleteWorkloads(self):
 
-    logger.info("Deleting workload: %s from Dynamo table: %s" % (self.workloadSpecName, self.workloadTableName) )
+    logger.info("Deleting workload: %s from Dynamo table: %s\n" % (self.workloadSpecName, self.workloadTableName) )
     workLoadTable = self.dynDb.Table(self.workloadTableName)
 
     workLoadTable.delete_item(Key={ Loader.WORKLOAD_PARTITION_KEY : self.workloadSpecName} )
@@ -185,7 +232,7 @@ class Loader(object):
   # ----------------------------------------------------------------------------
   def loadWorkload(self):
 
-    logger.info("Adding workload: %s to Dynamo table: %s" % (self.workloadSpecName, self.workloadTableName) )
+    logger.info("Adding workload: %s to Dynamo table: %s\n" % (self.workloadSpecName, self.workloadTableName) )
     workLoadTable = self.dynDb.Table(self.workloadTableName)
 
     workLoadTable.put_item(Item=self.workloadBlock)
@@ -202,7 +249,7 @@ class Loader(object):
     theTiers = response['Items']
 
     # Tier Table dynamo calls require both keys, Partition and Sort
-    logger.info("Deleting Tiers from table: %s" %  (self.tiersTableName))
+    logger.info("Deleting Tiers from table: {}\n".format(self.tiersTableName))
     for aTier in theTiers:
       primaryKey={Loader.TIER_PARTITION_KEY : aTier[Loader.TIER_PARTITION_KEY], Loader.TIER_SORT_KEY : aTier[Loader.TIER_SORT_KEY] }
       logger.info("Deleting Tier {%s, %s}" % (primaryKey[Loader.TIER_PARTITION_KEY], primaryKey[Loader.TIER_SORT_KEY]))
@@ -214,7 +261,7 @@ class Loader(object):
     tiersTable = self.dynDb.Table(self.tiersTableName)
     theTiers = self.tiers
     
-    logger.info("Loading Tiers into table: %s" %  (self.tiersTableName))
+    logger.info("Loading Tiers into table: {} \n".format(self.tiersTableName))
     for aTier in theTiers:
       logger.info("Loading Tier {%s, %s}" % (aTier.get(Loader.TIER_PARTITION_KEY), aTier.get(Loader.TIER_SORT_KEY)) )
       tiersTable.put_item(Item=aTier)
@@ -223,15 +270,31 @@ class Loader(object):
   def loadSpecification(self):
     self.deleteWorkloads()
     self.deleteTiers()
+    self.deleteWorkLoadState()
 
     self.loadWorkload()
     self.loadTiers()
+    self.workLoadState()
+
+
+  def deleteWorkLoadState(self):
+
+    try:
+        print("Deleting itemKey Workload value {} from {} table \n".format(self.workloadSpecName,self.WORKLOADSTATE))
+        self.WorkloadStateTable = self.dynDb.Table(self.WORKLOADSTATE)
+        self.WorkloadStateTable.delete_item(Key={"Workload":self.workloadSpecName})
+
+    except Exception as e:
+        print(e)
+        logger.info("Exception deleteWorkLoadState {}".format(e))
+
 
   def workLoadState(self):
 
     try:
         self.WorkloadStateTable = self.dynDb.Table(self.WORKLOADSTATE)
-        response = self.WorkloadStateTable.put_item(
+        print("Loading {} to table {} \n".format(self.workloadSpecName,self.WORKLOADSTATE))
+        self.WorkloadStateTable.put_item(
               Item={
               'Workload': self.workloadSpecName,
               'LastActionTime': str(self.currentTime),
@@ -239,11 +302,12 @@ class Loader(object):
              },
              ConditionExpression = "attribute_not_exists(Workload)")   
         logger.info("Updated WorkloadState DynamoDB")
+        print("Updated WorkloadState DynamoDB")
     except Exception as e:
-        if e.response['Error']['Code'] != 'ConditionalCheckFailedException':
-            msg = 'Orchestrator::readWorkloadStateTable() Exception encountered during DDB put_item %s -->' % e
-            logger.error(msg + str(e))
-            raise e
+        print(e)
+        msg = 'Exception encountered during DDB put_item %s -->' % e
+        logger.error(msg + str(e))
+        raise e
 
   def initLogging(self, loglevel):
      # Set logging level
@@ -273,12 +337,18 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Command line parser')
 
-    parser.add_argument('-f', '--fileName',       help='YAML Specification file name', required=True)
-    parser.add_argument('-r', '--dynamoDBRegion', help='Region where the DynamoDB configuration exists.', required=True)
-    parser.add_argument('-v', '--validateOnly', help='Only verify the Yaml file, do not execute any changes', action="store_true", required=False)
-    parser.add_argument('-l', '--logLevel', choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to log', required=False)
+    parser.add_argument('-f', '--fileName',       help='YAML Specification file name', required=False)
+    parser.add_argument('-r', '--dynamoDBRegion', help='Region where the DynamoDB configuration exists.', required=False)
+    parser.add_argument('-v', '--validateOnly',   help='Only verify the Yaml file, do not execute any changes', action="store_true", required=False)
+    parser.add_argument('-l', '--logLevel',       choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to log', required=False)
+
+    parser.add_argument('-s', '--sourceWorkloadPath',help="Provide the relative path of the source workload yaml file e.g  ../../AWS-Scheduling/loadDynamoDB/workloads/Quest-QA09.yaml",required=False)
+    parser.add_argument('-d', '--newWorkloadPath',   help="Provide the relative path of the destination workload yaml file e.g  ../../AWS-Scheduling/loadDynamoDB/workloads/Quest-QA10.yaml",required=False)
+    parser.add_argument('-u', '--unloadFilePath',help="Provide the relative path of the workload yaml file to delete from filesystem and unload from DDB e.g  ../../AWS-Scheduling/loadDynamoDB/workloads/Quest-QA10.yaml",required=False)
 
     args = parser.parse_args()
+    logger.info("args {}\n".format(args))
+    print("args passed are {} \n ".format(args))
 
     if( args.logLevel is not None):
       logLevel = args.logLevel
@@ -287,16 +357,27 @@ if __name__ == "__main__":
 
     loader = Loader(args.dynamoDBRegion.strip(), logLevel)
 
-    loader.loadYamlConfig(args.fileName.strip())
 
-    if( loader.isValidSpecification() ):
-      if( args.validateOnly ):
-        logger.info('--validateOnly flag passed, no changes will execute')
-      else:
-        loader.loadSpecification()
+    if args.unloadFilePath is not None:
+        loader.loadYamlConfig(args.unloadFilePath.strip())
+        loader.unload_workload()
+
+    elif args.sourceWorkloadPath is not None:
+        loader.copy_workload()
+
+    elif args.fileName is not None:
+        loader.loadYamlConfig(args.fileName.strip())
+
+
+        if( loader.isValidSpecification() ):
+            if( args.validateOnly ):
+                logger.info('--validateOnly flag passed, no changes will execute')
+            else:
+                logger.info("Run self.deleteWorkloads ,self.deleteTiers followed by self.loadWorkload,self.loadTiers\n")
+                loader.loadSpecification()
+
+        else:
+            logger.error('Yaml config file did not pass validation, exiting')
+            quit(-1)
     else:
-        logger.error('Yaml config file did not pass validation, exiting')
-        quit(-1)
-    loader.workLoadState()
-
-    logger.info("***Done***")
+        logger.info("***Done***")
