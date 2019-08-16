@@ -38,39 +38,33 @@ class Loader(object):
   # DDB Unload, YAML file deletion and copy workload
   #---------------------------------------------------------------------------------------------------------------------------------------
   def copy_workload(self):
-      # determine older environment name from source_specname filename passed
-      # determine new environment name to replace old environment name with from file passed.
-
-      sourceWorkloadName = os.path.split(args.sourceWorkloadPath)
-      newWorkloadName = os.path.split(args.newWorkloadPath)
-
-      logger.info("sourceWorkloadName {}\n".format(sourceWorkloadName[1]))
-      logger.info("newWorkloadName {}\n".format(newWorkloadName[1]))
-
-      source = re.search("(?<=Quest-)([A-Z]{2}\d{2})", sourceWorkloadName[1])
-      orig_env = source.group(0)
-      dest = re.search("(?<=Quest-)([A-Z]{2}\d{2})", newWorkloadName[1])
-      new_env = dest.group(0)
-
 
       # open file for reading
       try:
-          with open(args.sourceWorkloadPath, 'r+') as readfile:
-              filedata = readfile.read()  # loads file into memory and find older environment name and replace with new name
-              updatedfile = filedata.replace(orig_env, new_env)  # write out updated file to new_filename
+          with open(args.sourceYamlFile, 'r+') as file:
+              sourceYaml = yaml.safe_load(file)
+              sourceYaml['workloads']['workload']['SpecName'] = args.newSpecName
+              sourceYaml['workloads']['workload']['WorkloadFilterTagValue'] = args.newSpecName[6:10]
+              for tier in sourceYaml['tiers']['tiers']:
+                  tier['SpecName'] = args.newSpecName
 
       except Exception as e:
           print(e)
+
+
       # open file for writing
       try:
-          with open(args.newWorkloadPath, 'w') as writefile:
-              writefile.write(updatedfile)
-              print ("replaced {} with {} in {} ".format(orig_env, new_env, args.newWorkloadPath))
+          pathToYaml = os.path.split(args.sourceYamlFile)
+          newYaml = os.path.join(pathToYaml[0] + '/' + args.newYamlFile)
+          with open(newYaml, 'w') as file:
+              yaml.safe_dump(sourceYaml, file)
+              print ("updated {} in {} ".format( args.newSpecName, args.newYamlFile))
+
       except Exception as e:
           print(e)
 
   def unload_workload(self):  #unloads the workload form 3 tables and removes from filesystem.
-      unLoadFile = args.unloadFilePath.strip()
+      unLoadFile = args.unloadYamlFile.strip()
       self.deleteWorkloads()
       self.deleteTiers()
       self.deleteWorkLoadState()
@@ -342,9 +336,11 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--validateOnly',   help='Only verify the Yaml file, do not execute any changes', action="store_true", required=False)
     parser.add_argument('-l', '--logLevel',       choices=['critical', 'error', 'warning', 'info', 'debug', 'notset'], help='The level to log', required=False)
 
-    parser.add_argument('-s', '--sourceWorkloadPath',help="Provide the relative path of the source workload yaml file e.g  ../../AWS-Scheduling/loadDynamoDB/workloads/Quest-QA09.yaml",required=False)
-    parser.add_argument('-d', '--newWorkloadPath',   help="Provide the relative path of the destination workload yaml file e.g  ../../AWS-Scheduling/loadDynamoDB/workloads/Quest-QA10.yaml",required=False)
-    parser.add_argument('-u', '--unloadFilePath',help="Provide the relative path of the workload yaml file to delete from filesystem and unload from DDB e.g  ../../AWS-Scheduling/loadDynamoDB/workloads/Quest-QA10.yaml",required=False)
+    parser.add_argument('-s', '--sourceYamlFile',help="Provide the relative path of the source yaml file to clone e.g  ../../../../workloads/workload.yaml",required=False)
+    parser.add_argument('-d', '--newYamlFile',help="Provide the new yaml filename you want e.g Quest-QA10.yaml",required=False)
+    parser.add_argument('-n', '--newSpecName', help="Provide the new SpecName you want eg Quest-QA10-X",required=False)
+    parser.add_argument('-u', '--unloadYamlFile',help="Provide the relative path of the yaml file to unload from DDB and the filesystem e.g  ../../../workloads/Workload.yaml",required=False)
+
 
     args = parser.parse_args()
     logger.info("args {}\n".format(args))
@@ -358,11 +354,11 @@ if __name__ == "__main__":
     loader = Loader(args.dynamoDBRegion.strip(), logLevel)
 
 
-    if args.unloadFilePath is not None:
-        loader.loadYamlConfig(args.unloadFilePath.strip())
+    if args.unloadYamlFile is not None:
+        loader.loadYamlConfig(args.unloadYamlFile.strip())
         loader.unload_workload()
 
-    elif args.sourceWorkloadPath is not None:
+    elif args.sourceYamlFile is not None:
         loader.copy_workload()
 
     elif args.fileName is not None:
