@@ -460,6 +460,9 @@ Here are a few things you **need** to know about the Tier Specification:
 |**InterTierOrchestrationDelay**|The number of seconds to delay before actioning on the next tier.  Typically, you have a sense for how long to wait after the current tier starts or stops before actioning on the next tier.  This is where you set that delay, in seconds.  *Note: This is a string value* |No (default value is 5 seconds)|
 |**TierStopOverrideFilename**|The name of the override file in the guest OS to check for existance.  If the file exists in the guest OS, the server will not be stopped.|No|
 |**TierStopOverrideOperatingSystem**|The name of the OS in the guest.  Valid values are "Linux", or "Windows"|No. Unless you configure *TierStopOverrideFilename*|
+|**IgnoreStop**|Option to Ignore the Stop Command issued to the workload on a per tier basis. Valid values are True or False|
+
+
 
 #### JSON: TierSpecification Example
 The below JSON is a row in the TierSpecification DynamoDB table, and can be mapped several DynamoDB Attributes, three of which will contain JSON.  This tier, named *Role_Web* is Started as the third tier (sequence == 2) when the workload starts and is Stopped first.  Every instance is checked prior to Stopping (because Instance Exemption was configured and SSM enabled by the Administrator) to determine a file named StopOverride exists in the tmp directory (content of file is irrelevant), and if so the instance will not be stopped.  In the event of a Scaling request, with a provided profile name of "profileC", all instances within this tier will first be changed to t2.large prior to Starting.  Not all attributes are required.
