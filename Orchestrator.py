@@ -570,10 +570,11 @@ class Orchestrator(object):
 				self.sequenceTiers(Orchestrator.TIER_STOP)
 
 				for currTier in self.sequencedTiersList:
-					logger.debug("IgnoreStopValue for {} tier is {}".format(currTier, self.tierSpecDict[currTier][Orchestrator.TIER_STOP][Orchestrator.TIER_IGNORE_STOP]))
-					if 	self.tierSpecDict[currTier][Orchestrator.TIER_STOP][Orchestrator.TIER_IGNORE_STOP] =='True':
-						logger.info('Orchestrate() IgnoreStop set to True for Tier {} so no stop action was performed'.format(currTier))
-						continue # if condition above is met continue to next tier, do not execute stop on current tier.
+					if Orchestrator.TIER_IGNORE_STOP in self.tierSpecDict[currTier][Orchestrator.TIER_STOP]:
+						logger.debug("IgnoreStopValue for {} tier is {}".format(currTier, self.tierSpecDict[currTier][Orchestrator.TIER_STOP][Orchestrator.TIER_IGNORE_STOP]))
+						if 	self.tierSpecDict[currTier][Orchestrator.TIER_STOP][Orchestrator.TIER_IGNORE_STOP] =='True':
+							logger.info('Orchestrate() IgnoreStop set to True for Tier {} so no stop action was performed'.format(currTier))
+							continue # if condition above is met continue to next tier, do not execute stop on current tier.
 					logger.info('Orchestrate() Stopping Tier: ' + currTier)
 					# Stop the next tier in the sequence
 					self.stopATier(currTier)
